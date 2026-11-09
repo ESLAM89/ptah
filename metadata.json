@@ -1,0 +1,6 @@
+{
+  "name": "Ptah Real Estate | Luxury 3D & VR Architectural Properties",
+  "description": "Bespoke luxury real estate brokerage and development in Egypt featuring interactive 3D architectural models, immersive VR virtual tours, advanced search, and real-time property management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
