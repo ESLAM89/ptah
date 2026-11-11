@@ -9,7 +9,9 @@ import {
   Building2, 
   Glasses, 
   Sparkles,
-  DollarSign
+  DollarSign,
+  ShieldCheck,
+  Lock
 } from 'lucide-react';
 import { Language, Currency } from '../types';
 import { translations } from '../i18n/translations';
@@ -23,6 +25,9 @@ interface NavbarProps {
   activeTab: string;
   onNavigate: (tab: string) => void;
   onRequestConsultation: () => void;
+  isOwnerAuthenticated?: boolean;
+  onOpenOwnerDashboard?: () => void;
+  onOpenOwnerLogin?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -32,7 +37,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onCurrencyChange,
   activeTab,
   onNavigate,
-  onRequestConsultation
+  onRequestConsultation,
+  isOwnerAuthenticated,
+  onOpenOwnerDashboard,
+  onOpenOwnerLogin
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const t = translations[lang].nav;
@@ -95,6 +103,30 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Globe className="w-3 h-3" />
               <span>{lang === 'ar' ? 'English' : 'العربية'}</span>
             </button>
+
+            {/* Owner Portal Quick Access */}
+            {isOwnerAuthenticated ? (
+              <button
+                onClick={onOpenOwnerDashboard}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-gradient-to-r from-amber-500 to-amber-600 text-neutral-950 font-black text-[10px] hover:opacity-90 transition-all cursor-pointer shadow-sm shadow-amber-500/30"
+                title={lang === 'ar' ? 'الذهاب إلى لوحة المالك' : 'Go to Owner Dashboard'}
+              >
+                <ShieldCheck className="w-3 h-3" />
+                <span>{lang === 'ar' ? 'لوحة المالك (CMS)' : 'Owner CMS'}</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-950 animate-pulse" />
+              </button>
+            ) : (
+              onOpenOwnerLogin && (
+                <button
+                  onClick={onOpenOwnerLogin}
+                  className="p-1 rounded text-neutral-500 hover:text-amber-400 transition-colors cursor-pointer"
+                  title={lang === 'ar' ? 'تسجيل دخول المالك' : 'Owner Login'}
+                  aria-label="Owner Login"
+                >
+                  <Lock className="w-3 h-3" />
+                </button>
+              )
+            )}
           </div>
         </div>
       </div>

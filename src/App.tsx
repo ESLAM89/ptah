@@ -28,7 +28,9 @@ import {
   saveStoredProperties, 
   getStoredLeads, 
   saveStoredLeads,
-  SOCIAL_LINKS 
+  SOCIAL_LINKS,
+  getStoredCompanySettings,
+  logNewVisitor
 } from './data/mockProperties';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -62,6 +64,19 @@ export default function App() {
     return false;
   });
   const [isOwnerAuthModalOpen, setIsOwnerAuthModalOpen] = useState<boolean>(false);
+
+  // Live Company Settings (WhatsApp number, contacts)
+  const [companySettings, setCompanySettings] = useState(() => getStoredCompanySettings());
+
+  useEffect(() => {
+    const handleSettingsUpdate = (e: any) => {
+      if (e.detail) {
+        setCompanySettings(e.detail);
+      }
+    };
+    window.addEventListener('ptah_settings_updated', handleSettingsUpdate);
+    return () => window.removeEventListener('ptah_settings_updated', handleSettingsUpdate);
+  }, []);
 
   // 2. Currency
   const [currency, setCurrency] = useState<Currency>('EGP');
@@ -183,6 +198,20 @@ export default function App() {
     setSelectedPropertyForDetail(prop);
   };
 
+  // Real-time visitor logging for each page view
+  useEffect(() => {
+    if (activeTab !== 'admin') {
+      const pageNames: Record<string, string> = {
+        home: 'الرئيسية (Home)',
+        properties: 'قائمة العقارات والوحدات (Properties)',
+        projects: 'المشاريع والمطورين (Projects)',
+        about: 'من نحن (About Ptah)',
+        support: 'الدعم والاستشارات 24/7 (Support)'
+      };
+      logNewVisitor(pageNames[activeTab] || activeTab);
+    }
+  }, [activeTab]);
+
   const handleNavigate = (tab: string) => {
     if (tab === 'admin') {
       if (isOwnerAuthenticated) {
@@ -211,7 +240,8 @@ export default function App() {
     const text = lang === 'ar'
       ? 'مرحباً، أود التحدث مع مستشار عقاري من شركة بتاح للاستثمار العقاري بفرع العاشر من رمضان.'
       : 'Hello, I would like to speak with a Ptah Real Estate property advisor regarding 10th of Ramadan & Cairo units.';
-    window.open(`https://wa.me/${SOCIAL_LINKS.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
+    const cleanNumber = companySettings.whatsappNumber.replace(/[^0-9]/g, '');
+    window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   return (
@@ -226,6 +256,9 @@ export default function App() {
         activeTab={activeTab}
         onNavigate={handleNavigate}
         onRequestConsultation={() => setIsConsultationModalOpen(true)}
+        isOwnerAuthenticated={isOwnerAuthenticated}
+        onOpenOwnerDashboard={() => handleNavigate('admin')}
+        onOpenOwnerLogin={() => setIsOwnerAuthModalOpen(true)}
       />
 
       {/* Main View Router */}

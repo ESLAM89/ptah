@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -19,11 +19,30 @@ import {
   Save,
   Download,
   Globe,
-  LogOut
+  LogOut,
+  Bell,
+  BellRing,
+  Settings,
+  Smartphone,
+  Volume2,
+  VolumeX,
+  Radio,
+  Send,
+  RefreshCw,
+  Eye
 } from 'lucide-react';
-import { Property, LeadInquiry, Language, Currency, PropertyType, LocationKey } from '../types';
+import { Property, LeadInquiry, Language, Currency, PropertyType, LocationKey, VisitorLog, CompanySettings } from '../types';
 import { translations } from '../i18n/translations';
-import { SOCIAL_LINKS, resetPropertiesToDefault } from '../data/mockProperties';
+import { 
+  SOCIAL_LINKS, 
+  resetPropertiesToDefault,
+  getStoredCompanySettings,
+  saveStoredCompanySettings,
+  getStoredVisitorLogs,
+  clearVisitorLogs,
+  playNotificationSound,
+  logNewVisitor
+} from '../data/mockProperties';
 
 interface AdminDashboardProps {
   properties: Property[];
@@ -48,9 +67,109 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const tTypes = translations[lang].propertyTypes;
   const tLocs = translations[lang].locations;
 
-  const [activeTab, setActiveTab] = useState<'properties' | 'leads' | 'social' | 'domain'>('properties');
+  const [activeTab, setActiveTab] = useState<'properties' | 'leads' | 'visitors' | 'settings' | 'domain'>('properties');
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Real-time Visitor Tracking & Notification State
+  const [visitorLogs, setVisitorLogs] = useState<VisitorLog[]>(getStoredVisitorLogs);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ptah_sound_enabled') !== 'false';
+    }
+    return true;
+  });
+  const [browserNotifEnabled, setBrowserNotifEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission === 'granted';
+    }
+    return false;
+  });
+  const [lastVisitorAlert, setLastVisitorAlert] = useState<VisitorLog | null>(null);
+
+  // Company Settings State (Editable WhatsApp Number, Phone, Email, Socials)
+  const [settingsForm, setSettingsForm] = useState<CompanySettings>(getStoredCompanySettings);
+  const [settingsSuccessMsg, setSettingsSuccessMsg] = useState(false);
+
+  // Listen to Real-time visitor events
+  useEffect(() => {
+    const handleNewVisitor = (e: any) => {
+      const log = e.detail as VisitorLog;
+      setVisitorLogs(prev => [log, ...prev].slice(0, 100));
+      setLastVisitorAlert(log);
+
+      // Play audio chime alert if enabled
+      if (soundEnabled) {
+        playNotificationSound();
+      }
+
+      // Trigger browser notification if permitted
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification('🔔 زائر جديد في موقع بتاح للعقارات', {
+            body: `الزائر يتصفح الآن: ${log.page} (${log.device})`,
+            icon: '/assets/aistudio/logo_ptah__8c02f9bc.jpeg'
+          });
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const handleCleared = () => {
+      setVisitorLogs([]);
+    };
+
+    window.addEventListener('ptah_new_visitor', handleNewVisitor);
+    window.addEventListener('ptah_visitors_cleared', handleCleared);
+
+    return () => {
+      window.removeEventListener('ptah_new_visitor', handleNewVisitor);
+      window.removeEventListener('ptah_visitors_cleared', handleCleared);
+    };
+  }, [soundEnabled]);
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    localStorage.setItem('ptah_sound_enabled', String(next));
+    if (next) {
+      playNotificationSound();
+    }
+  };
+
+  const requestBrowserNotifications = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        setBrowserNotifEnabled(true);
+        new Notification('✅ تم تفعيل إشعارات الزوار بنجاح!', {
+          body: 'ستصلك تنبيهات فورية عند دخول أي زائر جديد لموقع بتاح للاستثمار العقاري.',
+          icon: '/assets/aistudio/logo_ptah__8c02f9bc.jpeg'
+        });
+        playNotificationSound();
+      }
+    }
+  };
+
+  const handleSimulateVisitor = () => {
+    const pages = ['الرئيسية (Home)', 'العقارات والوحدات (Properties)', 'فيلا العاشر من رمضان', 'موقع الشركة على الخريطة', 'صفحة المشاريع'];
+    const randomPage = pages[Math.floor(Math.random() * pages.length)];
+    logNewVisitor(randomPage);
+  };
+
+  const handleSendWhatsAppVisitorAlert = () => {
+    const text = `🚨 *تنبيه زوار موقع بتاح للاستثمار العقاري* 🚨\n\nيوجد زوار يتصفحون الموقع الآن.\nعدد الزيارات المسجلة: ${visitorLogs.length}\nرابط الموقع المباشر:\nhttps://www.ptahrealestate.com`;
+    const cleanNumber = settingsForm.whatsappNumber.replace(/[^0-9]/g, '');
+    window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const handleSaveCompanySettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveStoredCompanySettings(settingsForm);
+    setSettingsSuccessMsg(true);
+    setTimeout(() => setSettingsSuccessMsg(false), 4000);
+  };
+
   // Property Add/Edit Modal
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingPropertyId, setEditingPropertyId] = useState<string | null>(null);
@@ -315,8 +434,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         <div className="flex flex-wrap items-center gap-2.5">
           <a
-            href="/ptah-website.zip"
-            download="ptah-website.zip"
+            href="/ptah-download.zip"
+            download="ptah-download.zip"
             className="px-3.5 py-2.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-500/20"
             title={lang === 'ar' ? 'تحميل ملفات الموقع الكاملة لرفعها على استضافتك أو الدومين' : 'Download complete production files'}
           >
@@ -354,7 +473,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* KPI Cards Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-neutral-900/80 p-5 rounded-2xl border border-white/5">
           <div className="flex items-center justify-between text-neutral-400 text-xs mb-2">
             <span>{t.stats.totalProps}</span>
@@ -394,6 +513,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {featuredCount}
           </div>
         </div>
+
+        <div className="bg-neutral-900/80 p-5 rounded-2xl border border-white/5 col-span-2 sm:col-span-1">
+          <div className="flex items-center justify-between text-neutral-400 text-xs mb-2">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+              <span>{lang === 'ar' ? 'الزوار المسجلين' : 'Live Visitors'}</span>
+            </span>
+            <BellRing className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="text-2xl font-black text-emerald-400 font-sans">
+            {visitorLogs.length}
+          </div>
+        </div>
       </div>
 
       {/* Navigation Tabs */}
@@ -402,7 +534,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           onClick={() => setActiveTab('properties')}
           className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'properties'
-              ? 'bg-amber-500 text-neutral-950'
+              ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
           }`}
         >
@@ -414,7 +546,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           onClick={() => setActiveTab('leads')}
           className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'leads'
-              ? 'bg-amber-500 text-neutral-950'
+              ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
           }`}
         >
@@ -423,27 +555,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('visitors')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
+            activeTab === 'visitors'
+              ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
+          }`}
+        >
+          <Bell className="w-4 h-4" />
+          <span className="flex items-center gap-1.5">
+            <span>{lang === 'ar' ? 'إشعارات الزوار الحية' : 'Live Visitors & Alerts'}</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
+            activeTab === 'settings'
+              ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
+              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
+          }`}
+        >
+          <Settings className="w-4 h-4" />
+          <span>{lang === 'ar' ? 'بيانات الشركة والواتساب' : 'Company & WhatsApp'}</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('domain')}
           className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
             activeTab === 'domain'
-              ? 'bg-amber-500 text-neutral-950'
+              ? 'bg-amber-500 text-neutral-950 shadow-md shadow-amber-500/20'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
           }`}
         >
           <Globe className="w-4 h-4" />
-          <span>{lang === 'ar' ? 'ربط الدومين الخاص' : 'Custom Domain'}</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('social')}
-          className={`px-4 py-2.5 rounded-xl font-bold text-sm transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'social'
-              ? 'bg-amber-500 text-neutral-950'
-              : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
-          }`}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>{t.tabs.systemInfo}</span>
+          <span>{lang === 'ar' ? 'ربط الدومين وتحميل الموقع' : 'Custom Domain & ZIP'}</span>
         </button>
       </div>
 
@@ -631,154 +778,388 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* Tab 3: Official Social Channels & System Links */}
-      {activeTab === 'social' && (
+      {/* Tab 3: Real-Time Visitors & Notifications */}
+      {activeTab === 'visitors' && (
         <div className="bg-neutral-900/60 p-6 rounded-3xl border border-white/10 space-y-6">
-          <div>
-            <h3 className="text-lg font-bold text-white mb-1">
-              {lang === 'ar' ? 'الروابط الرسمية الموثقة لشركة بتاح' : 'Official Verified Ptah Real Estate Links'}
-            </h3>
-            <p className="text-xs text-neutral-400">
-              {lang === 'ar' 
-                ? 'جميع الحسابات الرسمية المعتمدة والتي تم ربطها بجميع أنحاء الموقع والفوتر ومحركات البحث.'
-                : 'All verified social media channels linked across the web platform, footer, and inquiry widgets.'}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            
-            <div className="bg-neutral-950 p-4 rounded-2xl border border-white/5 space-y-2">
-              <div className="font-bold text-amber-400 flex items-center justify-between">
-                <span>الموقع الإلكتروني الرسمي (Official Website)</span>
-                <span className="text-emerald-400 text-[10px]">نشط 24/7</span>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold mb-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span>{lang === 'ar' ? 'نظام التتبع والإشعار اللحظي نشط 24/7' : 'Live Real-time Visitor Radar Active'}</span>
               </div>
-              <div className="font-mono text-neutral-300 break-all">{SOCIAL_LINKS.domain}</div>
-              <a
-                href={SOCIAL_LINKS.website}
-                target="_blank"
-                rel="noreferrer"
-                className="text-amber-400 hover:underline flex items-center gap-1 pt-1"
-              >
-                <span>زيارة الرابط</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            <div className="bg-neutral-950 p-4 rounded-2xl border border-white/5 space-y-2">
-              <div className="font-bold text-blue-400 flex items-center justify-between">
-                <span>Facebook Page</span>
-                <span className="text-emerald-400 text-[10px]">Verified</span>
-              </div>
-              <div className="font-mono text-neutral-300 break-all">{SOCIAL_LINKS.facebook}</div>
-              <a
-                href={SOCIAL_LINKS.facebook}
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-400 hover:underline flex items-center gap-1 pt-1"
-              >
-                <span>فتح صفحة فيسبوك</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            <div className="bg-neutral-950 p-4 rounded-2xl border border-white/5 space-y-2">
-              <div className="font-bold text-blue-500 flex items-center justify-between">
-                <span>LinkedIn Corporate Profile</span>
-                <span className="text-emerald-400 text-[10px]">Connected</span>
-              </div>
-              <div className="font-mono text-neutral-300 break-all">{SOCIAL_LINKS.linkedin}</div>
-              <a
-                href={SOCIAL_LINKS.linkedin}
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-400 hover:underline flex items-center gap-1 pt-1"
-              >
-                <span>فتح حساب لينكد إن</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            <div className="bg-neutral-950 p-4 rounded-2xl border border-white/5 space-y-2">
-              <div className="font-bold text-pink-400 flex items-center justify-between">
-                <span>Instagram Profile</span>
-                <span className="text-emerald-400 text-[10px]">Active</span>
-              </div>
-              <div className="font-mono text-neutral-300 break-all">{SOCIAL_LINKS.instagram}</div>
-              <a
-                href={SOCIAL_LINKS.instagram}
-                target="_blank"
-                rel="noreferrer"
-                className="text-pink-400 hover:underline flex items-center gap-1 pt-1"
-              >
-                <span>فتح حساب إنستغرام</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            <div className="bg-neutral-950 p-4 rounded-2xl border border-white/5 space-y-2">
-              <div className="font-bold text-red-500 flex items-center justify-between">
-                <span>YouTube Channel</span>
-                <span className="text-emerald-400 text-[10px]">Active</span>
-              </div>
-              <div className="font-mono text-neutral-300 break-all">{SOCIAL_LINKS.youtube}</div>
-              <a
-                href={SOCIAL_LINKS.youtube}
-                target="_blank"
-                rel="noreferrer"
-                className="text-red-400 hover:underline flex items-center gap-1 pt-1"
-              >
-                <span>فتح قناة يوتيوب</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            <div className="bg-neutral-950 p-4 rounded-2xl border border-white/5 space-y-2">
-              <div className="font-bold text-teal-400 flex items-center justify-between">
-                <span>TikTok Channel (@ptah.real.estate)</span>
-                <span className="text-emerald-400 text-[10px]">Active</span>
-              </div>
-              <div className="font-mono text-neutral-300 break-all">{SOCIAL_LINKS.tiktok}</div>
-              <a
-                href={SOCIAL_LINKS.tiktok}
-                target="_blank"
-                rel="noreferrer"
-                className="text-teal-400 hover:underline flex items-center gap-1 pt-1"
-              >
-                <span>فتح حساب تيك توك</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            <div className="bg-neutral-950 p-4 rounded-2xl border border-white/5 space-y-2 md:col-span-2">
-              <div className="font-bold text-red-400 flex items-center justify-between">
-                <span>مقر الشركة بالعاشر من رمضان (Google Maps Location)</span>
-                <span className="text-emerald-400 text-[10px]">Verified Location</span>
-              </div>
-              <div className="text-neutral-300 text-xs font-semibold">{SOCIAL_LINKS.addressAr}</div>
-              <div className="font-mono text-amber-400 text-[11px] break-all">{SOCIAL_LINKS.mapsUrl}</div>
-              <a
-                href={SOCIAL_LINKS.mapsUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-red-400 hover:underline flex items-center gap-1 pt-1 font-bold"
-              >
-                <span>فتح الرابط في خرائط جوجل</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            <div className="bg-neutral-950 p-4 rounded-2xl border border-white/5 space-y-2 md:col-span-2">
-              <div className="font-bold text-emerald-400 flex items-center justify-between">
-                <span>WhatsApp 24/7 Concierge Hotline</span>
-                <span className="text-emerald-400 text-[10px]">Online Now</span>
-              </div>
-              <div className="font-mono text-neutral-300">{SOCIAL_LINKS.whatsappDisplay}</div>
-              <p className="text-[11px] text-neutral-400">
-                مربوط بنظام استقبال استفسارات العملاء وحجوزات المعاينة الميدانية تلقائياً.
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Bell className="w-5 h-5 text-amber-400" />
+                <span>{lang === 'ar' ? 'سجل الزوار وتنبيهات الدخول الفورية' : 'Live Visitor Log & Instant Alerts'}</span>
+              </h3>
+              <p className="text-xs text-neutral-400 mt-1">
+                {lang === 'ar' 
+                  ? 'يتم إشعارك فورياً بصوت ناعم وإشعار على الشاشة في كل مرة يدخل فيها عميل جديد إلى موقعك، مع إمكانية إرسال التنبيه على رقم الواتساب.'
+                  : 'Receive instant audible alerts and desktop push notifications whenever any customer visits your website.'}
               </p>
             </div>
 
+            {/* Quick Action Controls */}
+            <div className="flex flex-wrap items-center gap-2 self-start">
+              <button
+                onClick={toggleSound}
+                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  soundEnabled 
+                    ? 'bg-amber-500/15 border border-amber-500/40 text-amber-300' 
+                    : 'bg-neutral-800 text-neutral-400 border border-white/10'
+                }`}
+                title="تفعيل/تعطيل نغمة التنبيه عند وصول زائر"
+              >
+                {soundEnabled ? <Volume2 className="w-4 h-4 text-amber-400" /> : <VolumeX className="w-4 h-4" />}
+                <span>{soundEnabled ? (lang === 'ar' ? 'صوت التنبيه: مفعّل' : 'Sound: ON') : (lang === 'ar' ? 'صوت التنبيه: صامت' : 'Sound: OFF')}</span>
+              </button>
+
+              <button
+                onClick={requestBrowserNotifications}
+                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  browserNotifEnabled
+                    ? 'bg-emerald-950/70 border border-emerald-500/40 text-emerald-300'
+                    : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-white/10'
+                }`}
+                title="تفعيل إشعارات المتصفح حتى لو كنت تتصفح علامة تبويب أخرى"
+              >
+                <BellRing className="w-4 h-4 text-emerald-400" />
+                <span>{browserNotifEnabled ? (lang === 'ar' ? 'إشعارات المتصفح: نشطة' : 'Push: Active') : (lang === 'ar' ? 'تفعيل إشعارات المتصفح' : 'Enable Push')}</span>
+              </button>
+
+              <button
+                onClick={handleSimulateVisitor}
+                className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-amber-300 text-xs font-medium border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="محاكاة دخول زائر جديد لتجربة الصوت والتنبيه"
+              >
+                <Radio className="w-3.5 h-3.5 text-amber-400" />
+                <span>{lang === 'ar' ? 'تجربة التنبيه والصوت' : 'Test Alert Sound'}</span>
+              </button>
+
+              <button
+                onClick={handleSendWhatsAppVisitorAlert}
+                className="px-3 py-2 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-500/20 cursor-pointer"
+                title={`إرسال ملخص فوري للزوار على رقم الواتساب: ${settingsForm.whatsappNumber}`}
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{lang === 'ar' ? 'إشعار على واتساب' : 'Alert WhatsApp'}</span>
+              </button>
+            </div>
           </div>
+
+          {/* Banner for latest arrival */}
+          {lastVisitorAlert && (
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-300 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-2.5">
+                <span className="w-3 h-3 rounded-full bg-amber-400 animate-ping shrink-0" />
+                <span>
+                  <strong>{lang === 'ar' ? 'تنبيه زائر الآن:' : 'Live Visitor Alert:'}</strong>{' '}
+                  {lang === 'ar' ? `الزائر يتصفح صفحة «${lastVisitorAlert.page}» عبر جهاز (${lastVisitorAlert.device})` : `Visiting: ${lastVisitorAlert.page} on ${lastVisitorAlert.device}`}
+                </span>
+              </div>
+              <span className="font-mono text-[11px] text-amber-400/80">{lastVisitorAlert.timestamp}</span>
+            </div>
+          )}
+
+          {/* Visitors Table */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-neutral-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-amber-400" />
+                <span>{lang === 'ar' ? 'أحدث الزيارات المسجلة على الموقع' : 'Recent Visitor History'}</span>
+                <span className="text-[10px] text-neutral-500">({visitorLogs.length} زيارة)</span>
+              </h4>
+
+              {visitorLogs.length > 0 && (
+                <button
+                  onClick={clearVisitorLogs}
+                  className="text-[11px] text-neutral-400 hover:text-red-400 transition-colors cursor-pointer"
+                >
+                  {lang === 'ar' ? 'مسح سجل الزيارات' : 'Clear Log'}
+                </button>
+              )}
+            </div>
+
+            {visitorLogs.length === 0 ? (
+              <div className="text-center py-12 bg-neutral-950 rounded-2xl border border-white/5 space-y-2">
+                <Bell className="w-8 h-8 text-neutral-600 mx-auto" />
+                <p className="text-xs text-neutral-400 font-medium">
+                  {lang === 'ar' ? 'لا توجد زيارات مسجلة بعد. عند تصفح أي عميل للموقع ستظهر زيارته هنا فوراً مع صوت تنبيه.' : 'No visits recorded yet.'}
+                </p>
+                <button
+                  onClick={handleSimulateVisitor}
+                  className="text-xs text-amber-400 hover:underline pt-1 inline-block cursor-pointer font-bold"
+                >
+                  {lang === 'ar' ? 'اضغط هنا لتجربة تنبيه الزائر الآن 🔔' : 'Click to test visitor alert'}
+                </button>
+              </div>
+            ) : (
+              <div className="bg-neutral-950 rounded-2xl border border-white/5 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-start text-xs text-neutral-300">
+                    <thead className="bg-neutral-900 text-neutral-400 text-[11px] uppercase border-b border-white/5">
+                      <tr>
+                        <th className="p-3 text-start">{lang === 'ar' ? 'الوقت والتاريخ' : 'Time'}</th>
+                        <th className="p-3 text-start">{lang === 'ar' ? 'الصفحة التي يتصفحها' : 'Page Visited'}</th>
+                        <th className="p-3 text-center">{lang === 'ar' ? 'نوع الجهاز' : 'Device'}</th>
+                        <th className="p-3 text-start">{lang === 'ar' ? 'المتصفح' : 'Browser'}</th>
+                        <th className="p-3 text-start">{lang === 'ar' ? 'المصدر' : 'Source'}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 font-mono text-[11px]">
+                      {visitorLogs.map((log) => (
+                        <tr key={log.id} className="hover:bg-neutral-900/50 transition-colors">
+                          <td className="p-3 text-amber-400 whitespace-nowrap">
+                            {log.timestamp}
+                          </td>
+                          <td className="p-3 text-white font-sans font-semibold">
+                            {log.page}
+                          </td>
+                          <td className="p-3 text-center whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-neutral-800 text-neutral-300 text-[10px]">
+                              {log.device === 'mobile' ? '📱 Mobile' : (log.device === 'tablet' ? '📟 Tablet' : '💻 Desktop')}
+                            </span>
+                          </td>
+                          <td className="p-3 text-neutral-300 font-sans">
+                            {log.browser}
+                          </td>
+                          <td className="p-3 text-neutral-400 font-sans">
+                            {log.referrer}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tab 4: Company & Contact Settings (Editable WhatsApp, Phone, Location) */}
+      {activeTab === 'settings' && (
+        <div className="bg-neutral-900/60 p-6 rounded-3xl border border-white/10 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold mb-2">
+                <Settings className="w-3.5 h-3.5" />
+                <span>{lang === 'ar' ? 'لوحة تحكم إعدادات الشركة والتواصل' : 'Company & Contact Settings'}</span>
+              </div>
+              <h3 className="text-lg font-bold text-white">
+                {lang === 'ar' ? 'تعديل بيانات التواصل ورقم الواتساب الرسمي' : 'Edit WhatsApp & Official Company Contacts'}
+              </h3>
+              <p className="text-xs text-neutral-400 mt-1">
+                {lang === 'ar' 
+                  ? 'يمكنك تغيير رقم الواتساب، رقم الهاتف، العنوان، ورابط الخريطة متى تشاء وسيتحدث الموقع فوراً دون الحاجة لتعديل الكود.'
+                  : 'Update your official WhatsApp hotline, phone numbers, and office coordinates in real time.'}
+              </p>
+            </div>
+
+            <button
+              onClick={handleSaveCompanySettings}
+              className="px-5 py-3 rounded-2xl bg-gold-gradient text-neutral-950 font-black text-xs flex items-center gap-2 hover:opacity-95 shadow-lg shadow-amber-500/20 transition-all self-start cursor-pointer"
+            >
+              <Save className="w-4 h-4" />
+              <span>{lang === 'ar' ? 'حفظ وتطبيق التعديلات فوراً' : 'Save & Apply Live'}</span>
+            </button>
+          </div>
+
+          {settingsSuccessMsg && (
+            <div className="p-4 rounded-2xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2.5 animate-in fade-in">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              <span className="font-bold">
+                {lang === 'ar' ? 'تم حفظ التعديلات بنجاح وتحديث رقم الواتساب وبيانات الشركة عبر الموقع كاملاً!' : 'Settings updated and applied across the entire website successfully!'}
+              </span>
+            </div>
+          )}
+
+          <form onSubmit={handleSaveCompanySettings} className="space-y-6 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              
+              {/* WhatsApp Number (Key Request) */}
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-emerald-500/30 space-y-2">
+                <label className="block text-emerald-400 font-bold flex items-center justify-between">
+                  <span>{lang === 'ar' ? 'رقم الواتساب المباشر للخدمة والمحادثة' : 'Direct WhatsApp Number'} *</span>
+                  <span className="text-[10px] bg-emerald-950 px-2 py-0.5 rounded text-emerald-300">مربوط بكل أزرار الموقع</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={settingsForm.whatsappNumber}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, whatsappNumber: e.target.value })}
+                  placeholder="+201041981636"
+                  className="w-full bg-neutral-900 border border-emerald-500/30 focus:border-emerald-400 rounded-xl px-3.5 py-2.5 text-white font-mono"
+                />
+                <p className="text-[10px] text-neutral-400">
+                  الصيغة الدولية بدون مسافات (مثال: <span className="font-mono text-emerald-300">+201041981636</span>)
+                </p>
+              </div>
+
+              {/* WhatsApp Display */}
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-white/10 space-y-2">
+                <label className="block text-neutral-300 font-bold">
+                  {lang === 'ar' ? 'العرض النصي لرقم الواتساب للعملاء' : 'WhatsApp Display Format'} *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={settingsForm.whatsappDisplay}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, whatsappDisplay: e.target.value })}
+                  placeholder="+20 104 198 1636"
+                  className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-white font-mono"
+                />
+              </div>
+
+              {/* Phone Hotline */}
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-white/10 space-y-2">
+                <label className="block text-neutral-300 font-bold">
+                  {lang === 'ar' ? 'رقم هاتف الاتصال الهاتفي الساخن' : 'Official Phone Hotline'} *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={settingsForm.phone}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, phone: e.target.value })}
+                  placeholder="+20 104 198 1636"
+                  className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-white font-mono"
+                />
+              </div>
+
+              {/* Official Email */}
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-white/10 space-y-2">
+                <label className="block text-neutral-300 font-bold">
+                  {lang === 'ar' ? 'البريد الإلكتروني الرسمي للاستفسارات' : 'Official Email Address'} *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={settingsForm.email}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, email: e.target.value })}
+                  placeholder="info@ptahrealestate.com"
+                  className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-white font-mono"
+                />
+              </div>
+
+              {/* Address Arabic */}
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-white/10 space-y-2">
+                <label className="block text-neutral-300 font-bold">
+                  {lang === 'ar' ? 'عنوان مقر الشركة (بالعربية)' : 'Office Address (Arabic)'} *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={settingsForm.addressAr}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, addressAr: e.target.value })}
+                  placeholder="العاشر من رمضان، محافظة الشرقية، مصر"
+                  className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-white"
+                />
+              </div>
+
+              {/* Address English */}
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-white/10 space-y-2">
+                <label className="block text-neutral-300 font-bold">
+                  {lang === 'ar' ? 'عنوان مقر الشركة (بالإنجليزية)' : 'Office Address (English)'} *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={settingsForm.addressEn}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, addressEn: e.target.value })}
+                  placeholder="10th of Ramadan City, Sharqia Governorate, Egypt"
+                  className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-white"
+                />
+              </div>
+
+              {/* Google Maps Link */}
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-white/10 space-y-2 md:col-span-2">
+                <label className="block text-red-400 font-bold flex items-center justify-between">
+                  <span>{lang === 'ar' ? 'رابط مقر العاشر من رمضان على خرائط جوجل (Google Maps URL)' : 'Google Maps Location Link'} *</span>
+                  <a href={settingsForm.mapsUrl} target="_blank" rel="noreferrer" className="text-amber-400 hover:underline flex items-center gap-1 text-[11px]">
+                    <span>معاينة الرابط</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </label>
+                <input
+                  type="url"
+                  required
+                  value={settingsForm.mapsUrl}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, mapsUrl: e.target.value })}
+                  placeholder="https://maps.app.goo.gl/1j4jE64STYMftjHa7?g_st=aw"
+                  className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-white font-mono text-xs"
+                />
+              </div>
+
+              {/* Social Channels */}
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-white/10 space-y-3 md:col-span-2">
+                <div className="font-bold text-white text-xs border-b border-white/10 pb-2">
+                  {lang === 'ar' ? 'روابط شبكات التواصل الاجتماعي الرسمية' : 'Verified Social Media URLs'}
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-blue-400 font-semibold mb-1">Facebook</label>
+                    <input
+                      type="url"
+                      value={settingsForm.facebook}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, facebook: e.target.value })}
+                      className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3 py-2 text-white font-mono text-[11px]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-blue-500 font-semibold mb-1">LinkedIn</label>
+                    <input
+                      type="url"
+                      value={settingsForm.linkedin}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, linkedin: e.target.value })}
+                      className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3 py-2 text-white font-mono text-[11px]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-pink-400 font-semibold mb-1">Instagram</label>
+                    <input
+                      type="url"
+                      value={settingsForm.instagram}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, instagram: e.target.value })}
+                      className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3 py-2 text-white font-mono text-[11px]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-red-500 font-semibold mb-1">YouTube</label>
+                    <input
+                      type="url"
+                      value={settingsForm.youtube}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, youtube: e.target.value })}
+                      className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3 py-2 text-white font-mono text-[11px]"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-teal-400 font-semibold mb-1">TikTok</label>
+                    <input
+                      type="url"
+                      value={settingsForm.tiktok}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, tiktok: e.target.value })}
+                      className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3 py-2 text-white font-mono text-[11px]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="submit"
+                className="px-6 py-3 rounded-2xl bg-gold-gradient text-neutral-950 font-black text-xs flex items-center gap-2 hover:opacity-95 shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>{lang === 'ar' ? 'حفظ وتطبيق التعديلات الآن' : 'Save & Apply Live'}</span>
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -802,8 +1183,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <a
-              href="/ptah-website.zip"
-              download="ptah-website.zip"
+              href="/ptah-download.zip"
+              download="ptah-download.zip"
               className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all self-start cursor-pointer"
             >
               <Download className="w-4 h-4" />

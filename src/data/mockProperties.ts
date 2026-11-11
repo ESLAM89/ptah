@@ -1,4 +1,4 @@
-import { Property, LeadInquiry } from '../types';
+import { Property, LeadInquiry, VisitorLog, CompanySettings } from '../types';
 
 export const INITIAL_PROPERTIES: Property[] = [
   {
@@ -518,7 +518,7 @@ export function addLead(lead: Omit<LeadInquiry, 'id' | 'date' | 'status'>): Lead
   return newLead;
 }
 
-export const SOCIAL_LINKS = {
+export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   website: 'https://www.ptahrealestate.com',
   domain: 'www.ptahrealestate.com',
   facebook: 'https://www.facebook.com/?ref=homescreenpwa',
@@ -526,13 +526,137 @@ export const SOCIAL_LINKS = {
   instagram: 'https://www.instagram.com/?utm_source=pwa_homescreen&__pwa=1',
   youtube: 'https://www.youtube.com/channel/UCpKdoL2ivnVOwUcnaqquRFw',
   tiktok: 'https://www.tiktok.com/@ptah.real.estate',
-  whatsappNumber: '+201004889922',
-  whatsappDisplay: '+20 100 488 9922',
+  whatsappNumber: '+201041981636',
+  whatsappDisplay: '+20 104 198 1636',
   email: 'info@ptahrealestate.com',
-  phone: '+20 2 2188 9900',
+  phone: '+20 104 198 1636',
   addressAr: 'العاشر من رمضان، محافظة الشرقية، مصر',
   addressEn: '10th of Ramadan City, Sharqia Governorate, Egypt',
   mapsUrl: 'https://maps.app.goo.gl/1j4jE64STYMftjHa7?g_st=aw',
   logoUrl: '/assets/aistudio/logo_ptah__8c02f9bc.jpeg',
   heroHouseImage: '/assets/aistudio/download_eb054fbc.jpg'
 };
+
+const STORAGE_KEY_SETTINGS = 'ptah_company_settings';
+
+export function getStoredCompanySettings(): CompanySettings {
+  if (typeof window === 'undefined') return DEFAULT_COMPANY_SETTINGS;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
+    if (!raw) return DEFAULT_COMPANY_SETTINGS;
+    return { ...DEFAULT_COMPANY_SETTINGS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_COMPANY_SETTINGS;
+  }
+}
+
+export function saveStoredCompanySettings(settings: CompanySettings): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
+    window.dispatchEvent(new CustomEvent('ptah_settings_updated', { detail: settings }));
+  } catch (err) {
+    console.error('Failed to save settings:', err);
+  }
+}
+
+export const SOCIAL_LINKS = DEFAULT_COMPANY_SETTINGS;
+
+// --- REAL-TIME VISITOR LOGGING & NOTIFICATIONS ---
+const STORAGE_KEY_VISITORS = 'ptah_visitor_logs';
+
+export function getStoredVisitorLogs(): VisitorLog[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_VISITORS);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function logNewVisitor(pageName: string): VisitorLog {
+  const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const isTablet = typeof navigator !== 'undefined' && /iPad|Tablet/i.test(navigator.userAgent);
+  const deviceType: 'mobile' | 'desktop' | 'tablet' = isTablet ? 'tablet' : (isMobile ? 'mobile' : 'desktop');
+
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const dateStr = now.toLocaleDateString('ar-EG');
+
+  let browserName = 'Browser';
+  if (typeof navigator !== 'undefined') {
+    const ua = navigator.userAgent;
+    if (ua.includes('Edg/')) browserName = 'Edge';
+    else if (ua.includes('Chrome/')) browserName = 'Chrome';
+    else if (ua.includes('Safari/') && !ua.includes('Chrome/')) browserName = 'Safari';
+    else if (ua.includes('Firefox/')) browserName = 'Firefox';
+  }
+
+  const newLog: VisitorLog = {
+    id: `vis-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    timestamp: `${timeStr} (${dateStr})`,
+    page: pageName,
+    device: deviceType,
+    browser: browserName,
+    referrer: typeof document !== 'undefined' && document.referrer ? new URL(document.referrer).hostname : 'مباشر (Direct)'
+  };
+
+  if (typeof window !== 'undefined') {
+    try {
+      const logs = getStoredVisitorLogs();
+      const updated = [newLog, ...logs].slice(0, 100);
+      localStorage.setItem(STORAGE_KEY_VISITORS, JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent('ptah_new_visitor', { detail: newLog }));
+    } catch (err) {
+      console.error('Failed to log visitor:', err);
+    }
+  }
+
+  return newLog;
+}
+
+export function clearVisitorLogs(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(STORAGE_KEY_VISITORS);
+  window.dispatchEvent(new CustomEvent('ptah_visitors_cleared'));
+}
+
+export function playNotificationSound(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    
+    // Play a friendly dual-tone luxury chime
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(587.33, now); // D5
+    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
+
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(440, now);
+    osc2.frequency.exponentialRampToValueAtTime(659.25, now + 0.15); // E5
+
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 0.46);
+    osc2.stop(now + 0.46);
+  } catch (err) {
+    // Audio autoplay policy
+  }
+}
+

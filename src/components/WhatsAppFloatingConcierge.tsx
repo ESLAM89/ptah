@@ -9,7 +9,7 @@ import {
   Headphones 
 } from 'lucide-react';
 import { Language } from '../types';
-import { SOCIAL_LINKS } from '../data/mockProperties';
+import { SOCIAL_LINKS, getStoredCompanySettings } from '../data/mockProperties';
 
 interface WhatsAppFloatingProps {
   lang: Language;
@@ -31,7 +31,8 @@ export const WhatsAppFloatingConcierge: React.FC<WhatsAppFloatingProps> = ({ lan
   ];
 
   const handleLaunchWhatsApp = (messageText: string) => {
-    const cleanNumber = SOCIAL_LINKS.whatsappNumber.replace(/[^0-9]/g, '');
+    const settings = getStoredCompanySettings();
+    const cleanNumber = (settings.whatsappNumber || SOCIAL_LINKS.whatsappNumber).replace(/[^0-9]/g, '');
     const url = `https://wa.me/${cleanNumber}?text=${encodeURIComponent(messageText)}`;
     window.open(url, '_blank');
     setIsOpen(false);

@@ -88,3 +88,32 @@ export interface SearchFilterState {
   maxInstallmentYears: number;
   sortBy: 'price_asc' | 'price_desc' | 'area_desc' | 'newest';
 }
+
+export interface VisitorLog {
+  id: string;
+  timestamp: string;
+  page: string;
+  device: 'mobile' | 'desktop' | 'tablet';
+  browser: string;
+  referrer: string;
+}
+
+export interface CompanySettings {
+  website: string;
+  domain: string;
+  facebook: string;
+  linkedin: string;
+  instagram: string;
+  youtube: string;
+  tiktok: string;
+  whatsappNumber: string;
+  whatsappDisplay: string;
+  email: string;
+  phone: string;
+  addressAr: string;
+  addressEn: string;
+  mapsUrl: string;
+  logoUrl: string;
+  heroHouseImage: string;
+}
+

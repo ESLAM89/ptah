@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { Language } from '../types';
 import { translations } from '../i18n/translations';
-import { SOCIAL_LINKS } from '../data/mockProperties';
+import { SOCIAL_LINKS, getStoredCompanySettings } from '../data/mockProperties';
 
 interface FooterProps {
   lang: Language;
@@ -23,12 +23,14 @@ interface FooterProps {
 export const Footer: React.FC<FooterProps> = ({ lang, onNavigate, onOpenOwnerLogin }) => {
   const t = translations[lang].footer;
   const tNav = translations[lang].nav;
+  const settings = getStoredCompanySettings();
 
   const openWhatsApp = () => {
     const text = lang === 'ar'
       ? 'مرحباً، أود الاستفسار عن خدمات بتاح للاستثمار العقاري والوحدات المتاحة.'
       : 'Hello, I would like to inquire about Ptah Real Estate services and signature units.';
-    window.open(`https://wa.me/${SOCIAL_LINKS.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
+    const cleanNumber = (settings.whatsappNumber || SOCIAL_LINKS.whatsappNumber).replace(/[^0-9]/g, '');
+    window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   return (
@@ -242,15 +244,15 @@ export const Footer: React.FC<FooterProps> = ({ lang, onNavigate, onOpenOwnerLog
 
               <div className="flex items-center gap-2 text-neutral-300">
                 <Phone className="w-4 h-4 text-amber-400 shrink-0" />
-                <a href={`tel:${SOCIAL_LINKS.phone.replace(/[^0-9+]/g, '')}`} className="hover:text-white transition-colors">
-                  {SOCIAL_LINKS.phone}
+                <a href={`tel:${(settings.phone || SOCIAL_LINKS.phone).replace(/[^0-9+]/g, '')}`} className="hover:text-white transition-colors">
+                  {settings.phone || SOCIAL_LINKS.phone}
                 </a>
               </div>
 
               <div className="flex items-center gap-2 text-neutral-300">
                 <Mail className="w-4 h-4 text-amber-400 shrink-0" />
-                <a href={`mailto:${SOCIAL_LINKS.email}`} className="hover:text-white transition-colors">
-                  {SOCIAL_LINKS.email}
+                <a href={`mailto:${settings.email || SOCIAL_LINKS.email}`} className="hover:text-white transition-colors">
+                  {settings.email || SOCIAL_LINKS.email}
                 </a>
               </div>
 
