@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Lock, Eye, EyeOff, X, KeyRound, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Language } from '../types';
-import { SOCIAL_LINKS } from '../data/mockProperties';
+import { getStoredCompanySettings } from '../data/mockProperties';
 
 interface OwnerAuthModalProps {
   isOpen: boolean;
@@ -22,10 +22,13 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState('');
   const [showChangePin, setShowChangePin] = useState(false);
+  const [currentPinInput, setCurrentPinInput] = useState('');
   const [newPin, setNewPin] = useState('');
   const [pinChangedMsg, setPinChangedMsg] = useState(false);
 
   if (!isOpen) return null;
+
+  const settings = getStoredCompanySettings();
 
   const getStoredPin = () => {
     if (typeof window !== 'undefined') {
@@ -41,6 +44,7 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
 
     if (pin.trim() === currentPin) {
       setError('');
+      setPin('');
       localStorage.setItem('ptah_owner_authenticated', 'true');
       onSuccess();
     } else {
@@ -54,6 +58,15 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
 
   const handleUpdatePin = (e: React.FormEvent) => {
     e.preventDefault();
+    const storedPin = getStoredPin();
+    if (currentPinInput.trim() !== storedPin) {
+      setError(
+        lang === 'ar'
+          ? 'الرمز الحالي غير صحيح. يجب إدخال الرمز الحالي لتغييره.'
+          : 'Current password is incorrect.'
+      );
+      return;
+    }
     if (newPin.trim().length < 4) {
       setError(
         lang === 'ar'
@@ -65,6 +78,7 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
     localStorage.setItem('ptah_owner_pin', newPin.trim());
     setPinChangedMsg(true);
     setShowChangePin(false);
+    setCurrentPinInput('');
     setNewPin('');
     setError('');
     setTimeout(() => setPinChangedMsg(false), 4000);
@@ -87,7 +101,7 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
         <div className="flex flex-col items-center text-center space-y-3 mb-6">
           <div className="relative w-14 h-14 rounded-2xl bg-white p-1 border border-amber-500/40 shadow-lg shadow-amber-500/20">
             <img 
-              src={SOCIAL_LINKS.logoUrl} 
+              src={settings.logoUrl} 
               alt="Ptah Logo" 
               className="w-full h-full object-contain rounded-xl"
             />
@@ -161,12 +175,7 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
               <span>{lang === 'ar' ? 'الدخول إلى لوحة الإدارة' : 'Enter Owner Dashboard'}</span>
             </button>
 
-            <div className="pt-2 flex items-center justify-between text-[11px] text-neutral-400 border-t border-white/5">
-              <span className="text-neutral-500">
-                {lang === 'ar' ? 'الرمز الافتراضي: ' : 'Default PIN: '}
-                <strong className="text-amber-400/90 font-mono">ptah2025</strong>
-              </span>
-
+            <div className="pt-2 flex items-center justify-end text-[11px] text-neutral-400 border-t border-white/5">
               <button
                 type="button"
                 onClick={() => {
@@ -176,7 +185,7 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
                 className="text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <KeyRound className="w-3 h-3" />
-                <span>{lang === 'ar' ? 'تغيير الرمز' : 'Change PIN'}</span>
+                <span>{lang === 'ar' ? 'تغيير رمز الدخول' : 'Change PIN'}</span>
               </button>
             </div>
           </form>
@@ -185,13 +194,34 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
           <form onSubmit={handleUpdatePin} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
+                {lang === 'ar' ? 'رمز الدخول الحالي' : 'Current Owner PIN'}
+              </label>
+              <input
+                type="password"
+                required
+                value={currentPinInput}
+                onChange={(e) => {
+                  setCurrentPinInput(e.target.value);
+                  if (error) setError('');
+                }}
+                autoFocus
+                placeholder={lang === 'ar' ? 'أدخل الرمز الحالي للتحقق...' : 'Enter current PIN...'}
+                className="w-full bg-neutral-900 border border-white/15 focus:border-amber-400 rounded-xl px-4 py-3 text-sm text-white placeholder-neutral-500 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
                 {lang === 'ar' ? 'أدخل الرمز السري الجديد لإدارة الموقع' : 'Enter New Owner PIN'}
               </label>
               <input
                 type="password"
+                required
                 value={newPin}
-                onChange={(e) => setNewPin(e.target.value)}
-                autoFocus
+                onChange={(e) => {
+                  setNewPin(e.target.value);
+                  if (error) setError('');
+                }}
                 placeholder={lang === 'ar' ? 'رمز جديد (4 أحرف أو أرقام على الأقل)' : 'New PIN (min 4 characters)'}
                 className="w-full bg-neutral-900 border border-white/15 focus:border-amber-400 rounded-xl px-4 py-3 text-sm text-white placeholder-neutral-500 outline-none"
               />
@@ -213,7 +243,10 @@ export const OwnerAuthModal: React.FC<OwnerAuthModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setShowChangePin(false)}
+                onClick={() => {
+                  setShowChangePin(false);
+                  setError('');
+                }}
                 className="py-2.5 px-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs cursor-pointer"
               >
                 {lang === 'ar' ? 'إلغاء' : 'Cancel'}
