@@ -229,9 +229,9 @@ export const Footer: React.FC<FooterProps> = ({ lang, onNavigate, onOpenOwnerLog
               <div className="flex items-start gap-2 text-neutral-300">
                 <MapPin className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <div>
-                  <div>{lang === 'ar' ? SOCIAL_LINKS.addressAr : SOCIAL_LINKS.addressEn}</div>
+                  <div>{lang === 'ar' ? (settings.addressAr || SOCIAL_LINKS.addressAr) : (settings.addressEn || SOCIAL_LINKS.addressEn)}</div>
                   <a 
-                    href={SOCIAL_LINKS.mapsUrl}
+                    href={settings.mapsUrl || SOCIAL_LINKS.mapsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-amber-400 hover:underline flex items-center gap-1 mt-0.5 font-medium"

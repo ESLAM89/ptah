@@ -470,6 +470,11 @@ export function saveStoredProperties(properties: Property[]): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY_PROPERTIES, JSON.stringify(properties));
+    fetch('/api/properties', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(properties)
+    }).catch(() => {});
   } catch (err) {
     console.error('Failed to save properties to localStorage:', err);
   }
@@ -478,6 +483,11 @@ export function saveStoredProperties(properties: Property[]): void {
 export function resetPropertiesToDefault(): Property[] {
   if (typeof window === 'undefined') return INITIAL_PROPERTIES;
   localStorage.setItem(STORAGE_KEY_PROPERTIES, JSON.stringify(INITIAL_PROPERTIES));
+  fetch('/api/properties', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(INITIAL_PROPERTIES)
+  }).catch(() => {});
   return INITIAL_PROPERTIES;
 }
 
@@ -500,6 +510,11 @@ export function saveStoredLeads(leads: LeadInquiry[]): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY_LEADS, JSON.stringify(leads));
+    fetch('/api/leads', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(leads)
+    }).catch(() => {});
   } catch (err) {
     console.error('Failed to save leads to localStorage:', err);
   }
@@ -515,6 +530,9 @@ export function addLead(lead: Omit<LeadInquiry, 'id' | 'date' | 'status'>): Lead
   };
   const updated = [newLead, ...current];
   saveStoredLeads(updated);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ptah_new_lead', { detail: newLead }));
+  }
   return newLead;
 }
 
@@ -529,6 +547,8 @@ export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   whatsappNumber: '+201041981636',
   whatsappDisplay: '+20 104 198 1636',
   email: 'info@ptahrealestate.com',
+  notificationEmail: '',
+  notifyOnVisitorEmail: false,
   phone: '+20 104 198 1636',
   addressAr: 'العاشر من رمضان، محافظة الشرقية، مصر',
   addressEn: '10th of Ramadan City, Sharqia Governorate, Egypt',
@@ -555,6 +575,11 @@ export function saveStoredCompanySettings(settings: CompanySettings): void {
   try {
     localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));
     window.dispatchEvent(new CustomEvent('ptah_settings_updated', { detail: settings }));
+    fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    }).catch(() => {});
   } catch (err) {
     console.error('Failed to save settings:', err);
   }
@@ -562,21 +587,286 @@ export function saveStoredCompanySettings(settings: CompanySettings): void {
 
 export const SOCIAL_LINKS = DEFAULT_COMPANY_SETTINGS;
 
-// --- REAL-TIME VISITOR LOGGING & NOTIFICATIONS ---
+// --- EMAIL DISPATCH (FORMSUBMIT.CO AJAX) FOR STATIC + FULL-STACK HOSTING ---
+export async function sendEmailViaFormSubmit(
+  targetEmail: string,
+  subject: string,
+  fields: Record<string, string>
+): Promise<{ ok: boolean; message?: string }> {
+  const cleanEmail = (targetEmail || '').trim();
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    return { ok: false, message: 'Invalid target email' };
+  }
+  try {
+    const res = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(cleanEmail)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
+      },
+      body: JSON.stringify({
+        _subject: subject,
+        _template: 'table',
+        _captcha: 'false',
+        ...fields
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok && data?.success !== 'false', message: data?.message };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : 'Network error' };
+  }
+}
+
+export async function sendTestEmail(targetEmail: string): Promise<{ ok: boolean; message?: string }> {
+  return sendEmailViaFormSubmit(
+    targetEmail,
+    '✅ تفعيل واختبار استقبال رسائل موقع بتاح للعقارات (Ptah Real Estate)',
+    {
+      'الرسالة': 'هذه رسالة اختبار وتفعيل من لوحة تحكم شركة بتاح للاستثمار العقاري.',
+      'البريد المستهدف': targetEmail,
+      'النطاق': 'www.ptahrealestate.com',
+      'التوقيت': new Date().toLocaleString('ar-EG'),
+      'ملاحظة هامة': 'إذا كانت هذه أول رسالة تصلك عبر FormSubmit، اضغط على زر Activate Form بداخل الرسالة ليتم تفعيل استقبال جميع استفسارات العملاء فوراً.'
+    }
+  );
+}
+
+export async function submitLeadWithNotifications(
+  lead: Omit<LeadInquiry, 'id' | 'date' | 'status'>
+): Promise<LeadInquiry> {
+  const newLead = addLead(lead);
+
+  // Notify backend server + real-time SSE owner dashboard
+  fetch('/api/leads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(newLead)
+  }).catch(() => {});
+
+  // Dispatch real email to info@ptahrealestate.com (+ optional backup notification email)
+  const settings = getStoredCompanySettings();
+  const primaryEmail = (settings.email || 'info@ptahrealestate.com').trim();
+  const backupEmail = (settings.notificationEmail || '').trim();
+  const subject = `🏡 استفسار عميل جديد - ${lead.clientName} | بتاح للعقارات`;
+  const emailPayload: Record<string, string> = {
+    'اسم العميل': lead.clientName,
+    'رقم الهاتف / الواتساب': lead.clientPhone,
+    'البريد الإلكتروني للعميل': lead.clientEmail || 'غير مرفق',
+    'الوحدة / الموضوع': lead.propertyTitle || 'استشارة عقارية عامة',
+    'نوع الطلب': lead.type,
+    'التفاصيل والرسالة': lead.message,
+    'التاريخ والوقت': newLead.date
+  };
+
+  const tasks: Promise<unknown>[] = [sendEmailViaFormSubmit(primaryEmail, subject, emailPayload)];
+  if (backupEmail && backupEmail.toLowerCase() !== primaryEmail.toLowerCase()) {
+    tasks.push(sendEmailViaFormSubmit(backupEmail, subject, emailPayload));
+  }
+  await Promise.allSettled(tasks);
+
+  return newLead;
+}
+
+// --- GEOIP COUNTRY DETECTION & REAL-TIME VISITOR LOGGING ---
 const STORAGE_KEY_VISITORS = 'ptah_visitor_logs';
+const SESSION_KEY_GEO = 'ptah_visitor_geo_v1';
+const SESSION_KEY_VISITOR_EMAIL_SENT = 'ptah_visitor_email_notified';
+
+export const COUNTRY_AR_MAP: Record<string, string> = {
+  EG: 'مصر',
+  SA: 'السعودية',
+  AE: 'الإمارات',
+  KW: 'الكويت',
+  QA: 'قطر',
+  BH: 'البحرين',
+  OM: 'عُمان',
+  JO: 'الأردن',
+  LB: 'لبنان',
+  IQ: 'العراق',
+  SY: 'سوريا',
+  PS: 'فلسطين',
+  YE: 'اليمن',
+  LY: 'ليبيا',
+  TN: 'تونس',
+  DZ: 'الجزائر',
+  MA: 'المغرب',
+  SD: 'السودان',
+  US: 'الولايات المتحدة',
+  GB: 'المملكة المتحدة',
+  DE: 'ألمانيا',
+  FR: 'فرنسا',
+  IT: 'إيطاليا',
+  ES: 'إسبانيا',
+  TR: 'تركيا',
+  CA: 'كندا',
+  AU: 'أستراليا',
+  RU: 'روسيا',
+  CN: 'الصين',
+  IN: 'الهند'
+};
+
+export function countryCodeToFlag(code: string): string {
+  if (!code || code.length !== 2) return '🌍';
+  const upper = code.toUpperCase();
+  const offset = 127397;
+  return String.fromCodePoint(...upper.split('').map((c) => c.charCodeAt(0) + offset));
+}
+
+interface GeoInfo {
+  country: string;
+  countryAr: string;
+  countryCode: string;
+  city: string;
+  flag: string;
+}
+
+function getTimezoneFallbackGeo(): GeoInfo {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    const map: Record<string, { code: string; en: string; city: string }> = {
+      'Africa/Cairo': { code: 'EG', en: 'Egypt', city: 'القاهرة / مصر' },
+      'Asia/Riyadh': { code: 'SA', en: 'Saudi Arabia', city: 'الرياض' },
+      'Asia/Dubai': { code: 'AE', en: 'United Arab Emirates', city: 'دبي' },
+      'Asia/Kuwait': { code: 'KW', en: 'Kuwait', city: 'الكويت' },
+      'Asia/Qatar': { code: 'QA', en: 'Qatar', city: 'الدوحة' },
+      'Asia/Bahrain': { code: 'BH', en: 'Bahrain', city: 'المنامة' },
+      'Asia/Muscat': { code: 'OM', en: 'Oman', city: 'مسقط' },
+      'Asia/Amman': { code: 'JO', en: 'Jordan', city: 'عمّان' },
+      'Europe/London': { code: 'GB', en: 'United Kingdom', city: 'London' },
+      'Europe/Berlin': { code: 'DE', en: 'Germany', city: 'Berlin' },
+      'Europe/Paris': { code: 'FR', en: 'France', city: 'Paris' },
+      'America/New_York': { code: 'US', en: 'United States', city: 'New York' },
+      'America/Los_Angeles': { code: 'US', en: 'United States', city: 'Los Angeles' },
+    };
+    const hit = map[tz];
+    if (hit) {
+      return {
+        country: hit.en,
+        countryAr: COUNTRY_AR_MAP[hit.code] || hit.en,
+        countryCode: hit.code,
+        city: hit.city,
+        flag: countryCodeToFlag(hit.code)
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return {
+    country: 'Egypt',
+    countryAr: 'مصر',
+    countryCode: 'EG',
+    city: '',
+    flag: '🇪🇬'
+  };
+}
+
+export async function detectVisitorGeo(): Promise<GeoInfo> {
+  if (typeof window === 'undefined') return getTimezoneFallbackGeo();
+  try {
+    const cached = sessionStorage.getItem(SESSION_KEY_GEO);
+    if (cached) {
+      return JSON.parse(cached) as GeoInfo;
+    }
+  } catch {
+    // ignore
+  }
+
+  // Try ipwho.is first (no key required, CORS enabled)
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3200);
+    const resp = await fetch('https://ipwho.is/', { signal: controller.signal });
+    clearTimeout(timer);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.success !== false && data.country_code) {
+        const cc = String(data.country_code).toUpperCase();
+        const geo: GeoInfo = {
+          country: data.country || cc,
+          countryAr: COUNTRY_AR_MAP[cc] || data.country || 'غير معروف',
+          countryCode: cc,
+          city: data.city || '',
+          flag: countryCodeToFlag(cc)
+        };
+        try {
+          sessionStorage.setItem(SESSION_KEY_GEO, JSON.stringify(geo));
+        } catch {
+          // ignore
+        }
+        return geo;
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  // Try ipapi.co fallback
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3200);
+    const resp = await fetch('https://ipapi.co/json/', { signal: controller.signal });
+    clearTimeout(timer);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data.country_code) {
+        const cc = String(data.country_code).toUpperCase();
+        const geo: GeoInfo = {
+          country: data.country_name || cc,
+          countryAr: COUNTRY_AR_MAP[cc] || data.country_name || 'غير معروف',
+          countryCode: cc,
+          city: data.city || '',
+          flag: countryCodeToFlag(cc)
+        };
+        try {
+          sessionStorage.setItem(SESSION_KEY_GEO, JSON.stringify(geo));
+        } catch {
+          // ignore
+        }
+        return geo;
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  return getTimezoneFallbackGeo();
+}
 
 export function getStoredVisitorLogs(): VisitorLog[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY_VISITORS);
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw) as Partial<VisitorLog>[];
+    return parsed.map((v) => ({
+      id: v.id || `vis-${Date.now()}`,
+      timestamp: v.timestamp || '',
+      page: v.page || 'الرئيسية (Home)',
+      device: v.device || 'desktop',
+      browser: v.browser || 'Browser',
+      referrer: v.referrer || 'مباشر (Direct)',
+      country: v.country || 'Egypt',
+      countryAr: v.countryAr || 'مصر',
+      countryCode: v.countryCode || 'EG',
+      city: v.city || '',
+      flag: v.flag || countryCodeToFlag(v.countryCode || 'EG')
+    }));
   } catch {
     return [];
   }
 }
 
-export function logNewVisitor(pageName: string): VisitorLog {
+export function saveStoredVisitorLogs(logs: VisitorLog[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEY_VISITORS, JSON.stringify(logs.slice(0, 150)));
+  } catch {
+    // ignore
+  }
+}
+
+export async function logNewVisitor(pageName: string, overrideGeo?: Partial<GeoInfo>): Promise<VisitorLog> {
   const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const isTablet = typeof navigator !== 'undefined' && /iPad|Tablet/i.test(navigator.userAgent);
   const deviceType: 'mobile' | 'desktop' | 'tablet' = isTablet ? 'tablet' : (isMobile ? 'mobile' : 'desktop');
@@ -594,23 +884,90 @@ export function logNewVisitor(pageName: string): VisitorLog {
     else if (ua.includes('Firefox/')) browserName = 'Firefox';
   }
 
-  const newLog: VisitorLog = {
+  let referrerStr = 'مباشر (Direct)';
+  if (typeof document !== 'undefined' && document.referrer) {
+    try {
+      referrerStr = new URL(document.referrer).hostname || 'مباشر (Direct)';
+    } catch {
+      referrerStr = 'مباشر (Direct)';
+    }
+  }
+
+  const detectedGeo = overrideGeo?.countryCode
+    ? {
+        country: overrideGeo.country || overrideGeo.countryCode,
+        countryAr: overrideGeo.countryAr || COUNTRY_AR_MAP[overrideGeo.countryCode] || overrideGeo.country || 'غير معروف',
+        countryCode: overrideGeo.countryCode,
+        city: overrideGeo.city || '',
+        flag: overrideGeo.flag || countryCodeToFlag(overrideGeo.countryCode)
+      }
+    : await detectVisitorGeo();
+
+  let newLog: VisitorLog = {
     id: `vis-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     timestamp: `${timeStr} (${dateStr})`,
     page: pageName,
     device: deviceType,
     browser: browserName,
-    referrer: typeof document !== 'undefined' && document.referrer ? new URL(document.referrer).hostname : 'مباشر (Direct)'
+    referrer: referrerStr,
+    country: detectedGeo.country,
+    countryAr: detectedGeo.countryAr,
+    countryCode: detectedGeo.countryCode,
+    city: detectedGeo.city,
+    flag: detectedGeo.flag
   };
 
   if (typeof window !== 'undefined') {
+    // Post to backend API so server resolves GeoIP & broadcasts live SSE alert to Owner Dashboard across devices
+    try {
+      const resp = await fetch('/api/visitors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newLog)
+      });
+      if (resp.ok) {
+        const serverEntry = await resp.json();
+        if (serverEntry && serverEntry.id) {
+          newLog = { ...newLog, ...serverEntry };
+        }
+      }
+    } catch {
+      // Offline/static hosting fallback works locally via localStorage
+    }
+
     try {
       const logs = getStoredVisitorLogs();
-      const updated = [newLog, ...logs].slice(0, 100);
+      const updated = [newLog, ...logs.filter((l) => l.id !== newLog.id)].slice(0, 150);
       localStorage.setItem(STORAGE_KEY_VISITORS, JSON.stringify(updated));
       window.dispatchEvent(new CustomEvent('ptah_new_visitor', { detail: newLog }));
     } catch (err) {
       console.error('Failed to log visitor:', err);
+    }
+
+    // Optional visitor arrival email notification (sent once per visitor session if owner enabled it)
+    try {
+      const settings = getStoredCompanySettings();
+      const isOwnerSession = localStorage.getItem('ptah_owner_authenticated') === 'true';
+      const alreadySent = sessionStorage.getItem(SESSION_KEY_VISITOR_EMAIL_SENT) === 'true';
+      if (settings.notifyOnVisitorEmail && !isOwnerSession && !alreadySent && !overrideGeo) {
+        sessionStorage.setItem(SESSION_KEY_VISITOR_EMAIL_SENT, 'true');
+        const target = (settings.notificationEmail || settings.email || 'info@ptahrealestate.com').trim();
+        sendEmailViaFormSubmit(
+          target,
+          `👀 زائر جديد دخل موقع بتاح من ${newLog.flag || ''} ${newLog.countryAr}`,
+          {
+            'الدولة': `${newLog.flag || ''} ${newLog.countryAr} (${newLog.country})`,
+            'المدينة': newLog.city || 'غير محددة',
+            'الصفحة': newLog.page,
+            'الجهاز': newLog.device,
+            'المتصفح': newLog.browser,
+            'المصدر': newLog.referrer,
+            'التوقيت': newLog.timestamp
+          }
+        ).catch(() => {});
+      }
+    } catch {
+      // ignore
     }
   }
 
@@ -620,29 +977,29 @@ export function logNewVisitor(pageName: string): VisitorLog {
 export function clearVisitorLogs(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(STORAGE_KEY_VISITORS);
+  fetch('/api/visitors', { method: 'DELETE' }).catch(() => {});
   window.dispatchEvent(new CustomEvent('ptah_visitors_cleared'));
 }
 
 export function playNotificationSound(): void {
   if (typeof window === 'undefined') return;
   try {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
-    
-    // Play a friendly dual-tone luxury chime
+
     const now = ctx.currentTime;
     const osc1 = ctx.createOscillator();
     const osc2 = ctx.createOscillator();
     const gain = ctx.createGain();
 
     osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(587.33, now); // D5
-    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
+    osc1.frequency.setValueAtTime(587.33, now);
+    osc1.frequency.exponentialRampToValueAtTime(880, now + 0.15);
 
     osc2.type = 'triangle';
     osc2.frequency.setValueAtTime(440, now);
-    osc2.frequency.exponentialRampToValueAtTime(659.25, now + 0.15); // E5
+    osc2.frequency.exponentialRampToValueAtTime(659.25, now + 0.15);
 
     gain.gain.setValueAtTime(0.2, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
@@ -655,8 +1012,9 @@ export function playNotificationSound(): void {
     osc2.start(now);
     osc1.stop(now + 0.46);
     osc2.stop(now + 0.46);
-  } catch (err) {
+  } catch {
     // Audio autoplay policy
   }
 }
+
 

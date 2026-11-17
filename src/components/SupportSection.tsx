@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { Language } from '../types';
 import { translations } from '../i18n/translations';
-import { SOCIAL_LINKS, addLead } from '../data/mockProperties';
+import { getStoredCompanySettings, submitLeadWithNotifications } from '../data/mockProperties';
 
 interface SupportSectionProps {
   lang: Language;
@@ -22,6 +22,7 @@ interface SupportSectionProps {
 
 export const SupportSection: React.FC<SupportSectionProps> = ({ lang }) => {
   const t = translations[lang].support;
+  const settings = getStoredCompanySettings();
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [ticketName, setTicketName] = useState('');
   const [ticketPhone, setTicketPhone] = useState('');
@@ -29,17 +30,18 @@ export const SupportSection: React.FC<SupportSectionProps> = ({ lang }) => {
   const [ticketSubmitted, setTicketSubmitted] = useState(false);
 
   const openWhatsApp = () => {
+    const liveSettings = getStoredCompanySettings();
     const text = lang === 'ar'
       ? 'مرحباً، أود التواصل مع فريق الدعم الفني والاستشارات العقارية في بتاح على مدار الساعة.'
       : 'Hello, I would like to reach Ptah 24/7 technical and advisory support.';
-    window.open(`https://wa.me/${SOCIAL_LINKS.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
+    window.open(`https://wa.me/${liveSettings.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
-  const handleTicketSubmit = (e: React.FormEvent) => {
+  const handleTicketSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ticketName || !ticketPhone) return;
 
-    addLead({
+    await submitLeadWithNotifications({
       clientName: ticketName,
       clientPhone: ticketPhone,
       message: `[دعم فني واستشارة 24/7]: ${ticketMessage}`,
@@ -91,7 +93,7 @@ export const SupportSection: React.FC<SupportSectionProps> = ({ lang }) => {
 
           <div className="pt-4">
             <div className="text-xs font-mono text-emerald-400 font-bold mb-3">
-              {SOCIAL_LINKS.whatsappDisplay}
+              {settings.whatsappDisplay}
             </div>
             <button
               onClick={openWhatsApp}
@@ -119,10 +121,10 @@ export const SupportSection: React.FC<SupportSectionProps> = ({ lang }) => {
 
           <div className="pt-4">
             <div className="text-xs font-mono text-neutral-200 font-bold mb-3">
-              {SOCIAL_LINKS.phone}
+              {settings.phone}
             </div>
             <a
-              href={`tel:${SOCIAL_LINKS.phone.replace(/[^0-9+]/g, '')}`}
+              href={`tel:${settings.phone.replace(/[^0-9+]/g, '')}`}
               className="w-full py-3 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors block text-center"
             >
               <Phone className="w-4 h-4 inline-block" />
@@ -141,13 +143,13 @@ export const SupportSection: React.FC<SupportSectionProps> = ({ lang }) => {
               {t.officeVisit}
             </h3>
             <p className="text-xs text-neutral-400 leading-relaxed">
-              {lang === 'ar' ? SOCIAL_LINKS.addressAr : SOCIAL_LINKS.addressEn}
+              {lang === 'ar' ? settings.addressAr : settings.addressEn}
             </p>
           </div>
 
           <div className="pt-4 space-y-2">
             <a
-              href={SOCIAL_LINKS.mapsUrl}
+              href={settings.mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-red-600/20"
@@ -157,11 +159,11 @@ export const SupportSection: React.FC<SupportSectionProps> = ({ lang }) => {
             </a>
 
             <a
-              href={`mailto:${SOCIAL_LINKS.email}`}
+              href={`mailto:${settings.email}`}
               className="w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors block text-center"
             >
               <Mail className="w-4 h-4 inline-block" />
-              <span>{lang === 'ar' ? 'إرسال بريد إلكتروني' : 'Email Concierge'}</span>
+              <span>{settings.email}</span>
             </a>
           </div>
         </div>

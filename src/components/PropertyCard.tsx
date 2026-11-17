@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { Property, Language, Currency } from '../types';
 import { translations } from '../i18n/translations';
-import { SOCIAL_LINKS } from '../data/mockProperties';
+import { getStoredCompanySettings } from '../data/mockProperties';
 
 interface PropertyCardProps {
   property: Property;
@@ -49,10 +49,11 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
 
   const handleWhatsApp = (e: React.MouseEvent) => {
     e.stopPropagation();
+    const settings = getStoredCompanySettings();
     const text = lang === 'ar'
       ? `مرحباً، أود الاستفسار عن تفاصيل وحجز موعد معاينة للوحدة كود (${property.refCode}) - ${property.title.ar}، بسعر ${displayPrice}.`
       : `Hello, I would like to inquire about details and schedule a VIP tour for property ref (${property.refCode}) - ${property.title.en}, listed at ${displayPrice}.`;
-    window.open(`https://wa.me/${SOCIAL_LINKS.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
+    window.open(`https://wa.me/${settings.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   return (

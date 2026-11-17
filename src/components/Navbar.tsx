@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { Language, Currency } from '../types';
 import { translations } from '../i18n/translations';
-import { SOCIAL_LINKS } from '../data/mockProperties';
+import { getStoredCompanySettings } from '../data/mockProperties';
 
 interface NavbarProps {
   lang: Language;
@@ -44,6 +44,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const t = translations[lang].nav;
+  const settings = getStoredCompanySettings();
 
   const handleNavClick = (tabId: string) => {
     onNavigate(tabId);
@@ -51,10 +52,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const openWhatsApp = () => {
+    const liveSettings = getStoredCompanySettings();
     const text = lang === 'ar'
       ? 'مرحباً، أود التحدث مع مستشار عقاري من بتاح للاستثمار العقاري بخصوص الفرص الاستثمارية والوحدات الفاخرة.'
       : 'Hello, I would like to speak with a Ptah Real Estate senior property advisor regarding luxury investment opportunities.';
-    window.open(`https://wa.me/${SOCIAL_LINKS.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
+    window.open(`https://wa.me/${liveSettings.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   return (
@@ -69,16 +71,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             </span>
             <span className="hidden md:inline text-neutral-500">•</span>
             <a 
-              href={`tel:${SOCIAL_LINKS.phone.replace(/[^0-9+]/g, '')}`} 
+              href={`tel:${settings.phone.replace(/[^0-9+]/g, '')}`} 
               className="hidden md:flex items-center gap-1 hover:text-white transition-colors"
             >
               <PhoneCall className="w-3 h-3 text-amber-400" />
-              <span>{SOCIAL_LINKS.phone}</span>
+              <span>{settings.phone}</span>
             </a>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-neutral-500 hidden sm:inline">{SOCIAL_LINKS.domain}</span>
+            <span className="text-neutral-500 hidden sm:inline">{settings.domain}</span>
             {/* Currency Switcher */}
             <div className="flex items-center bg-neutral-900 rounded-md p-0.5 border border-white/10 text-[10px]">
               <button
@@ -141,7 +143,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <div className="relative w-12 h-12 rounded-xl overflow-hidden border border-amber-500/30 p-0.5 shadow-lg shadow-amber-500/20 transition-transform group-hover:scale-105 bg-white">
             <img 
-              src={SOCIAL_LINKS.logoUrl} 
+              src={settings.logoUrl} 
               alt="Ptah Real Estate Logo" 
               className="w-full h-full object-contain rounded-lg"
             />
@@ -187,7 +189,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <a
-            href={SOCIAL_LINKS.mapsUrl}
+            href={settings.mapsUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="px-3 py-2 rounded-xl text-sm font-medium transition-all text-neutral-300 hover:text-amber-300 hover:bg-white/5 flex items-center gap-1.5"
@@ -282,7 +284,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               {t.properties}
             </button>
             <a
-              href={SOCIAL_LINKS.mapsUrl}
+              href={settings.mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-start px-3 py-2.5 rounded-xl text-sm font-semibold text-neutral-300 hover:text-amber-400 flex items-center gap-2"

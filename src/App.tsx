@@ -21,15 +21,17 @@ import {
   MapPin,
   ExternalLink
 } from 'lucide-react';
-import { Property, LeadInquiry, Language, Currency, SearchFilterState } from './types';
+import { Property, LeadInquiry, Language, Currency, SearchFilterState, VisitorLog, CompanySettings } from './types';
 import { translations } from './i18n/translations';
 import { 
   getStoredProperties, 
   saveStoredProperties, 
   getStoredLeads, 
   saveStoredLeads,
-  SOCIAL_LINKS,
   getStoredCompanySettings,
+  saveStoredVisitorLogs,
+  getStoredVisitorLogs,
+  playNotificationSound,
   logNewVisitor
 } from './data/mockProperties';
 import { Navbar } from './components/Navbar';
@@ -64,14 +66,16 @@ export default function App() {
     return false;
   });
   const [isOwnerAuthModalOpen, setIsOwnerAuthModalOpen] = useState<boolean>(false);
+  const [liveVisitorToast, setLiveVisitorToast] = useState<VisitorLog | null>(null);
 
   // Live Company Settings (WhatsApp number, contacts)
-  const [companySettings, setCompanySettings] = useState(() => getStoredCompanySettings());
+  const [companySettings, setCompanySettings] = useState<CompanySettings>(() => getStoredCompanySettings());
 
   useEffect(() => {
-    const handleSettingsUpdate = (e: any) => {
-      if (e.detail) {
-        setCompanySettings(e.detail);
+    const handleSettingsUpdate = (e: Event) => {
+      const detail = (e as CustomEvent<CompanySettings>).detail;
+      if (detail) {
+        setCompanySettings(detail);
       }
     };
     window.addEventListener('ptah_settings_updated', handleSettingsUpdate);
@@ -88,7 +92,7 @@ export default function App() {
     localStorage.setItem('ptah_lang', lang);
   }, [lang]);
 
-  // 3. Properties State (Synced with localStorage for real-time live CMS)
+  // 3. Properties State (Synced with localStorage + server backend)
   const [properties, setProperties] = useState<Property[]>(getStoredProperties);
   const handleUpdateProperties = (newProps: Property[]) => {
     setProperties(newProps);
@@ -101,6 +105,88 @@ export default function App() {
     setLeads(newLeads);
     saveStoredLeads(newLeads);
   };
+
+  // Hydrate server state on initial load
+  useEffect(() => {
+    fetch('/api/state')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return;
+        if (Array.isArray(data.properties) && data.properties.length > 0) {
+          setProperties(data.properties);
+          localStorage.setItem('ptah_real_estate_properties_v4', JSON.stringify(data.properties));
+        }
+        if (data.settings && typeof data.settings === 'object') {
+          const mergedSettings = { ...getStoredCompanySettings(), ...data.settings };
+          setCompanySettings(mergedSettings);
+          localStorage.setItem('ptah_company_settings', JSON.stringify(mergedSettings));
+        }
+        if (Array.isArray(data.leads) && data.leads.length > 0) {
+          setLeads(data.leads);
+          localStorage.setItem('ptah_real_estate_leads_v4', JSON.stringify(data.leads));
+        }
+        if (Array.isArray(data.visitors) && data.visitors.length > 0) {
+          saveStoredVisitorLogs(data.visitors);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Real-time SSE notifications for Owner across all devices/browsers
+  useEffect(() => {
+    if (!isOwnerAuthenticated || typeof EventSource === 'undefined') return;
+
+    const es = new EventSource('/api/stream');
+
+    es.addEventListener('visitor', (ev) => {
+      try {
+        const log = JSON.parse((ev as MessageEvent).data) as VisitorLog;
+        if (!log || !log.id) return;
+        const existing = getStoredVisitorLogs();
+        if (!existing.some((v) => v.id === log.id)) {
+          saveStoredVisitorLogs([log, ...existing]);
+          window.dispatchEvent(new CustomEvent('ptah_new_visitor', { detail: log }));
+        }
+        setLiveVisitorToast(log);
+        setTimeout(() => {
+          setLiveVisitorToast((curr) => (curr?.id === log.id ? null : curr));
+        }, 8000);
+
+        if (localStorage.getItem('ptah_sound_enabled') !== 'false') {
+          playNotificationSound();
+        }
+      } catch {
+        // ignore parse error
+      }
+    });
+
+    es.addEventListener('lead', (ev) => {
+      try {
+        const newLead = JSON.parse((ev as MessageEvent).data) as LeadInquiry;
+        if (!newLead || !newLead.id) return;
+        setLeads((prev) => {
+          if (prev.some((l) => l.id === newLead.id)) return prev;
+          const next = [newLead, ...prev];
+          localStorage.setItem('ptah_real_estate_leads_v4', JSON.stringify(next));
+          return next;
+        });
+        if (localStorage.getItem('ptah_sound_enabled') !== 'false') {
+          playNotificationSound();
+        }
+      } catch {
+        // ignore
+      }
+    });
+
+    es.addEventListener('visitors_cleared', () => {
+      localStorage.removeItem('ptah_visitor_logs');
+      window.dispatchEvent(new CustomEvent('ptah_visitors_cleared'));
+    });
+
+    return () => {
+      es.close();
+    };
+  }, [isOwnerAuthenticated]);
 
   // 5. Active Tab Navigation
   const [activeTab, setActiveTab] = useState<string>('home');
@@ -132,6 +218,31 @@ export default function App() {
 
   const t = translations[lang];
 
+  // Extract custom typed locations from properties for filter dropdown
+  const customLocations = useMemo(() => {
+    const standardKeys = new Set([
+      'tenth_of_ramadan',
+      'new_cairo',
+      'new_capital',
+      'sheikh_zayed',
+      'north_coast',
+      'el_gouna',
+      'october_city'
+    ]);
+    const seen = new Set<string>();
+    const list: { value: string; label: string }[] = [];
+    for (const p of properties) {
+      if (!standardKeys.has(p.location) && p.locationName?.ar) {
+        const val = `custom:${p.locationName.ar}`;
+        if (!seen.has(val)) {
+          seen.add(val);
+          list.push({ value: val, label: lang === 'ar' ? p.locationName.ar : (p.locationName.en || p.locationName.ar) });
+        }
+      }
+    }
+    return list;
+  }, [properties, lang]);
+
   // Filter Properties Logic
   const filteredProperties = useMemo(() => {
     return properties.filter(prop => {
@@ -143,14 +254,21 @@ export default function App() {
         const matchCompound = prop.compound.toLowerCase().includes(kw);
         const matchDev = prop.developer.toLowerCase().includes(kw);
         const matchRef = prop.refCode.toLowerCase().includes(kw);
-        if (!matchTitleAr && !matchTitleEn && !matchCompound && !matchDev && !matchRef) {
+        const matchLocAr = prop.locationName.ar.toLowerCase().includes(kw);
+        const matchLocEn = prop.locationName.en.toLowerCase().includes(kw);
+        if (!matchTitleAr && !matchTitleEn && !matchCompound && !matchDev && !matchRef && !matchLocAr && !matchLocEn) {
           return false;
         }
       }
 
       // Location
-      if (filter.location !== 'all' && prop.location !== filter.location) {
-        return false;
+      if (filter.location !== 'all') {
+        if (filter.location.startsWith('custom:')) {
+          const customAr = filter.location.slice(7);
+          if (prop.locationName.ar !== customAr) return false;
+        } else if (prop.location !== filter.location) {
+          return false;
+        }
       }
 
       // Property Type
@@ -198,9 +316,9 @@ export default function App() {
     setSelectedPropertyForDetail(prop);
   };
 
-  // Real-time visitor logging for each page view
+  // Real-time visitor logging for public visitor page views
   useEffect(() => {
-    if (activeTab !== 'admin') {
+    if (activeTab !== 'admin' && !isOwnerAuthenticated) {
       const pageNames: Record<string, string> = {
         home: 'الرئيسية (Home)',
         properties: 'قائمة العقارات والوحدات (Properties)',
@@ -210,7 +328,7 @@ export default function App() {
       };
       logNewVisitor(pageNames[activeTab] || activeTab);
     }
-  }, [activeTab]);
+  }, [activeTab, isOwnerAuthenticated]);
 
   const handleNavigate = (tab: string) => {
     if (tab === 'admin') {
@@ -303,7 +421,7 @@ export default function App() {
                       </button>
 
                       <a
-                        href={SOCIAL_LINKS.mapsUrl}
+                        href={companySettings.mapsUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="px-6 py-3.5 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-amber-400 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border border-amber-500/30 transition-all cursor-pointer shadow-md"
@@ -325,6 +443,7 @@ export default function App() {
                 onFilterChange={setFilter}
                 lang={lang}
                 currency={currency}
+                customLocations={customLocations}
                 onQuickTagClick={(tag) => {
                   setActiveTab('properties');
                 }}
@@ -412,7 +531,7 @@ export default function App() {
 
                     <div className="pt-3 flex flex-wrap items-center gap-3">
                       <a
-                        href={SOCIAL_LINKS.mapsUrl}
+                        href={companySettings.mapsUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="px-6 py-3.5 rounded-2xl bg-gold-gradient text-neutral-950 font-black text-xs sm:text-sm flex items-center gap-2 hover:opacity-95 shadow-xl shadow-amber-500/20 transition-all cursor-pointer"
@@ -449,16 +568,16 @@ export default function App() {
                           {lang === 'ar' ? 'العنوان الرسمي:' : 'Official Address:'}
                         </div>
                         <div className="text-white font-bold leading-relaxed">
-                          {lang === 'ar' ? SOCIAL_LINKS.addressAr : SOCIAL_LINKS.addressEn}
+                          {lang === 'ar' ? companySettings.addressAr : companySettings.addressEn}
                         </div>
                         <div className="text-amber-400/90 font-mono text-[11px] pt-1">
-                          {SOCIAL_LINKS.mapsUrl}
+                          {companySettings.mapsUrl}
                         </div>
                       </div>
                     </div>
 
                     <a
-                      href={SOCIAL_LINKS.mapsUrl}
+                      href={companySettings.mapsUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-600/25 transition-all"
@@ -559,6 +678,7 @@ export default function App() {
               onFilterChange={setFilter}
               lang={lang}
               currency={currency}
+              customLocations={customLocations}
             />
 
             {/* Results Counter */}
@@ -698,6 +818,35 @@ export default function App() {
         onSuccess={handleOwnerAuthSuccess}
         lang={lang}
       />
+
+      {/* Live Owner Visitor Alert Toast (visible across all tabs when logged in) */}
+      {isOwnerAuthenticated && liveVisitorToast && (
+        <div
+          onClick={() => {
+            setActiveTab('admin');
+            setLiveVisitorToast(null);
+          }}
+          className="fixed top-20 end-4 z-50 max-w-sm bg-neutral-950/95 border border-amber-500/50 rounded-2xl p-4 shadow-2xl backdrop-blur-xl cursor-pointer animate-in slide-in-from-top-3 duration-200 hover:border-amber-400"
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-2xl leading-none">{liveVisitorToast.flag || '🌍'}</span>
+            <div className="space-y-1 text-xs">
+              <div className="font-bold text-amber-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span>{lang === 'ar' ? 'زائر جديد دخل الموقع الآن!' : 'New Visitor Online!'}</span>
+              </div>
+              <div className="text-white font-semibold">
+                {lang === 'ar'
+                  ? `الدولة: ${liveVisitorToast.countryAr || liveVisitorToast.country}${liveVisitorToast.city ? ` (${liveVisitorToast.city})` : ''}`
+                  : `Country: ${liveVisitorToast.country}${liveVisitorToast.city ? ` (${liveVisitorToast.city})` : ''}`}
+              </div>
+              <div className="text-neutral-400">
+                {liveVisitorToast.page} • {liveVisitorToast.device}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating WhatsApp 24/7 Concierge */}
       <WhatsAppFloatingConcierge lang={lang} />

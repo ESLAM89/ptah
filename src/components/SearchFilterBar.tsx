@@ -19,6 +19,7 @@ interface SearchFilterBarProps {
   onFilterChange: (newFilter: SearchFilterState) => void;
   lang: Language;
   currency: Currency;
+  customLocations?: { value: string; label: string }[];
   onQuickTagClick?: (tag: string) => void;
 }
 
@@ -27,6 +28,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   onFilterChange,
   lang,
   currency,
+  customLocations = [],
   onQuickTagClick
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
@@ -95,6 +97,10 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
             <option value="sheikh_zayed">{tLocs.sheikh_zayed}</option>
             <option value="north_coast">{tLocs.north_coast}</option>
             <option value="el_gouna">{tLocs.el_gouna}</option>
+            <option value="october_city">{tLocs.october_city}</option>
+            {customLocations.map((loc) => (
+              <option key={loc.value} value={loc.value}>{loc.label}</option>
+            ))}
           </select>
           <ChevronDown className="w-4 h-4 text-neutral-400 absolute top-1/2 -translate-y-1/2 end-3 pointer-events-none" />
         </div>

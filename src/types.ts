@@ -17,7 +17,9 @@ export type LocationKey =
   | 'sheikh_zayed' 
   | 'north_coast' 
   | 'el_gouna' 
-  | 'october_city';
+  | 'october_city'
+  | 'custom'
+  | (string & {});
 
 export interface VRRoom {
   id: string;
@@ -96,6 +98,11 @@ export interface VisitorLog {
   device: 'mobile' | 'desktop' | 'tablet';
   browser: string;
   referrer: string;
+  country: string;
+  countryAr: string;
+  countryCode: string;
+  city?: string;
+  flag?: string;
 }
 
 export interface CompanySettings {
@@ -109,6 +116,8 @@ export interface CompanySettings {
   whatsappNumber: string;
   whatsappDisplay: string;
   email: string;
+  notificationEmail?: string;
+  notifyOnVisitorEmail?: boolean;
   phone: string;
   addressAr: string;
   addressEn: string;

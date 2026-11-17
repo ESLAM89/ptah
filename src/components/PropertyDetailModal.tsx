@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { Property, Language, Currency } from '../types';
 import { translations } from '../i18n/translations';
-import { SOCIAL_LINKS, addLead } from '../data/mockProperties';
+import { getStoredCompanySettings, submitLeadWithNotifications } from '../data/mockProperties';
 
 interface PropertyDetailModalProps {
   property: Property;
@@ -46,6 +46,7 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
   const [notes, setNotes] = useState('');
   const [bookingSuccess, setBookingSuccess] = useState(false);
 
+  const settings = getStoredCompanySettings();
   const t = translations[lang].detail;
   const tTypes = translations[lang].propertyTypes;
   const tCatalog = translations[lang].catalog;
@@ -73,11 +74,11 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
     ? `$${monthlyEst.toLocaleString()}`
     : `${monthlyEst.toLocaleString()} ج.م`;
 
-  const handleSubmitBooking = (e: React.FormEvent) => {
+  const handleSubmitBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientName || !clientPhone) return;
 
-    addLead({
+    await submitLeadWithNotifications({
       propertyId: property.id,
       propertyTitle: property.title[lang],
       clientName,
@@ -91,10 +92,11 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
   };
 
   const handleWhatsAppBooking = () => {
+    const liveSettings = getStoredCompanySettings();
     const text = lang === 'ar'
       ? `مرحباً بتاح للاستثمار العقاري، أود حجز معاينة خاصة للوحدة كود (${property.refCode}) - ${property.title.ar}، بسعر ${displayPrice}. هل يمكن ترتيب موعد مع استشاري المبيعات؟`
       : `Hello Ptah Real Estate, I would like to schedule a private VIP viewing for property ref (${property.refCode}) - ${property.title.en}, priced at ${displayPrice}. Please connect me with a Senior Advisor.`;
-    window.open(`https://wa.me/${SOCIAL_LINKS.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
+    window.open(`https://wa.me/${liveSettings.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   return (
@@ -114,7 +116,7 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
 
           <div className="flex items-center gap-2">
             <a
-              href={SOCIAL_LINKS.mapsUrl}
+              href={settings.mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-amber-500/20"

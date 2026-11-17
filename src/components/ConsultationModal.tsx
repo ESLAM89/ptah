@@ -12,7 +12,7 @@ import {
   Building2
 } from 'lucide-react';
 import { Language, Currency } from '../types';
-import { SOCIAL_LINKS, addLead } from '../data/mockProperties';
+import { getStoredCompanySettings, submitLeadWithNotifications } from '../data/mockProperties';
 
 interface ConsultationModalProps {
   lang: Language;
@@ -29,30 +29,39 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [preferredLocation, setPreferredLocation] = useState('new_cairo');
+  const [customLocation, setCustomLocation] = useState('');
   const [budget, setBudget] = useState('20m_40m');
   const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !phone) return;
+    if (!name || !phone || isSubmitting) return;
 
-    addLead({
+    setIsSubmitting(true);
+    const chosenLoc = preferredLocation === 'custom'
+      ? (customLocation.trim() || 'منطقة مخصصة')
+      : preferredLocation;
+
+    await submitLeadWithNotifications({
       clientName: name,
       clientPhone: phone,
       clientEmail: email || undefined,
-      message: `طلب استشارة VIP: المنطقة المفضلة (${preferredLocation})، الميزانية (${budget}). ملاحظات: ${notes || 'لا يوجد'}`,
+      message: `طلب استشارة VIP: المنطقة المفضلة (${chosenLoc})، الميزانية (${budget}). ملاحظات: ${notes || 'لا يوجد'}`,
       type: 'consultation'
     });
 
+    setIsSubmitting(false);
     setIsSuccess(true);
   };
 
   const handleWhatsAppDirect = () => {
+    const settings = getStoredCompanySettings();
     const text = lang === 'ar'
       ? `مرحباً بتاح للاستثمار العقاري، اسمي ${name || 'عميل مهتم'}، أود حجز جلسة استشارية خاصة لمناقشة الفرص الاستثمارية في مصر.`
       : `Hello Ptah Real Estate, my name is ${name || 'Interested Client'}, I would like to schedule a private VIP advisory consultation.`;
-    window.open(`https://wa.me/${SOCIAL_LINKS.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
+    window.open(`https://wa.me/${settings.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   return (
@@ -93,12 +102,12 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
             </h4>
             <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed max-w-sm mx-auto">
               {lang === 'ar'
-                ? 'سيتواصل معكم أحد كبار مديري الاستثمار في بتاح خلال أقل من 15 دقيقة لترتيب موعد المكالمة أو المعاينة الميدانية.'
-                : 'A Ptah Senior Partner will reach out in under 15 minutes to coordinate your executive session.'}
+                ? 'تم إرسال طلبكم لإدارة بتاح للاستثمار العقاري وبريد الشركة الرسمي، وسيتواصل معكم أحد كبار مديري الاستثمار خلال أقل من 15 دقيقة.'
+                : 'Your request has been sent to our executive team and official email. A Ptah Senior Partner will reach out in under 15 minutes.'}
             </p>
             <button
               onClick={onClose}
-              className="px-6 py-2.5 rounded-xl bg-amber-500 text-neutral-950 font-bold text-xs"
+              className="px-6 py-2.5 rounded-xl bg-amber-500 text-neutral-950 font-bold text-xs cursor-pointer"
             >
               {lang === 'ar' ? 'حسناً، إغلاق' : 'Close'}
             </button>
@@ -171,6 +180,7 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
                   <option value="sheikh_zayed">{lang === 'ar' ? 'الشيخ زايد' : 'Sheikh Zayed'}</option>
                   <option value="new_capital">{lang === 'ar' ? 'العاصمة الإدارية' : 'New Capital'}</option>
                   <option value="el_gouna">{lang === 'ar' ? 'الجونة' : 'El Gouna'}</option>
+                  <option value="custom">{lang === 'ar' ? 'أخرى (اكتب المنطقة)' : 'Other (Custom)'}</option>
                 </select>
               </div>
 
@@ -190,6 +200,21 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
               </div>
             </div>
 
+            {preferredLocation === 'custom' && (
+              <div>
+                <label className="block text-amber-300 font-medium mb-1">
+                  {lang === 'ar' ? 'اكتب اسم المنطقة أو المدينة المطلوبة' : 'Type preferred area / city'}
+                </label>
+                <input
+                  type="text"
+                  value={customLocation}
+                  onChange={(e) => setCustomLocation(e.target.value)}
+                  placeholder={lang === 'ar' ? 'مثال: الشروق، مدينتي، المنصورة الجديدة...' : 'e.g., El Shorouk, Madinaty...'}
+                  className="w-full bg-neutral-900 border border-amber-500/40 rounded-xl p-2.5 text-white focus:outline-none focus:border-amber-400"
+                />
+              </div>
+            )}
+
             <div>
               <label className="block text-neutral-300 font-medium mb-1">
                 {lang === 'ar' ? 'ملاحظات أو أسئلة استثمارية' : 'Specific Requirements'}
@@ -206,10 +231,11 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
             <div className="pt-2 flex flex-col gap-2">
               <button
                 type="submit"
-                className="w-full py-3 rounded-xl bg-gold-gradient text-neutral-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 hover:opacity-95 shadow-lg shadow-amber-500/20 transition-all cursor-pointer"
+                disabled={isSubmitting}
+                className="w-full py-3 rounded-xl bg-gold-gradient text-neutral-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 hover:opacity-95 shadow-lg shadow-amber-500/20 transition-all cursor-pointer disabled:opacity-60"
               >
                 <Send className="w-4 h-4" />
-                <span>{lang === 'ar' ? 'تأكيد طلب الاستشارة الآن' : 'Confirm Advisory Request'}</span>
+                <span>{isSubmitting ? (lang === 'ar' ? 'جاري الإرسال...' : 'Sending...') : (lang === 'ar' ? 'تأكيد طلب الاستشارة الآن' : 'Confirm Advisory Request')}</span>
               </button>
 
               <button

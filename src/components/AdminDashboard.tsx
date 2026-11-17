@@ -29,7 +29,9 @@ import {
   Radio,
   Send,
   RefreshCw,
-  Eye
+  Eye,
+  Mail,
+  MapPin
 } from 'lucide-react';
 import { Property, LeadInquiry, Language, Currency, PropertyType, LocationKey, VisitorLog, CompanySettings } from '../types';
 import { translations } from '../i18n/translations';
@@ -39,10 +41,22 @@ import {
   getStoredCompanySettings,
   saveStoredCompanySettings,
   getStoredVisitorLogs,
+  saveStoredVisitorLogs,
   clearVisitorLogs,
   playNotificationSound,
-  logNewVisitor
+  logNewVisitor,
+  sendTestEmail
 } from '../data/mockProperties';
+
+const LOCATION_PRESETS: Record<string, { ar: string; en: string }> = {
+  tenth_of_ramadan: { ar: 'العاشر من رمضان، محافظة الشرقية', en: '10th of Ramadan City, Sharqia' },
+  new_cairo: { ar: 'القاهرة الجديدة، التجمع الخامس', en: 'New Cairo, 5th Settlement' },
+  new_capital: { ar: 'العاصمة الإدارية الجديدة', en: 'New Administrative Capital' },
+  sheikh_zayed: { ar: 'الشيخ زايد، الجيزة', en: 'Sheikh Zayed, Giza' },
+  north_coast: { ar: 'الساحل الشمالي، البحر المتوسط', en: 'North Coast & Ras El Hekma' },
+  el_gouna: { ar: 'الجونة، البحر الأحمر', en: 'El Gouna, Red Sea' },
+  october_city: { ar: 'مدينة السادس من أكتوبر', en: '6th of October City' }
+};
 
 interface AdminDashboardProps {
   properties: Property[];
@@ -89,24 +103,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Company Settings State (Editable WhatsApp Number, Phone, Email, Socials)
   const [settingsForm, setSettingsForm] = useState<CompanySettings>(getStoredCompanySettings);
   const [settingsSuccessMsg, setSettingsSuccessMsg] = useState(false);
+  const [testEmailStatus, setTestEmailStatus] = useState<{ state: 'idle' | 'sending' | 'sent' | 'error'; msg?: string }>({ state: 'idle' });
 
-  // Listen to Real-time visitor events
+  // Hydrate server visitors on mount
   useEffect(() => {
-    const handleNewVisitor = (e: any) => {
-      const log = e.detail as VisitorLog;
-      setVisitorLogs(prev => [log, ...prev].slice(0, 100));
+    fetch('/api/visitors')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((serverVisitors) => {
+        if (Array.isArray(serverVisitors) && serverVisitors.length > 0) {
+          setVisitorLogs((prev) => {
+            const seen = new Set(serverVisitors.map((v: VisitorLog) => v.id));
+            const merged = [...serverVisitors, ...prev.filter((v) => !seen.has(v.id))].slice(0, 150);
+            saveStoredVisitorLogs(merged);
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Listen to Real-time visitor events (both local tab & SSE cross-device events)
+  useEffect(() => {
+    const handleNewVisitor = (e: Event) => {
+      const log = (e as CustomEvent<VisitorLog>).detail;
+      if (!log) return;
+      setVisitorLogs((prev) => {
+        if (prev.some((p) => p.id === log.id)) return prev;
+        const updated = [log, ...prev].slice(0, 150);
+        saveStoredVisitorLogs(updated);
+        return updated;
+      });
       setLastVisitorAlert(log);
 
-      // Play audio chime alert if enabled
       if (soundEnabled) {
         playNotificationSound();
       }
 
-      // Trigger browser notification if permitted
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
         try {
-          new Notification('🔔 زائر جديد في موقع بتاح للعقارات', {
-            body: `الزائر يتصفح الآن: ${log.page} (${log.device})`,
+          new Notification(`🔔 زائر جديد من ${log.flag || '🌍'} ${log.countryAr || log.country || 'زائر'}`, {
+            body: `يتصفح: ${log.page} • ${log.city ? `${log.city} • ` : ''}${log.device}`,
             icon: '/assets/aistudio/logo_ptah__8c02f9bc.jpeg'
           });
         } catch {
@@ -117,6 +153,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const handleCleared = () => {
       setVisitorLogs([]);
+      setLastVisitorAlert(null);
     };
 
     window.addEventListener('ptah_new_visitor', handleNewVisitor);
@@ -143,7 +180,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (perm === 'granted') {
         setBrowserNotifEnabled(true);
         new Notification('✅ تم تفعيل إشعارات الزوار بنجاح!', {
-          body: 'ستصلك تنبيهات فورية عند دخول أي زائر جديد لموقع بتاح للاستثمار العقاري.',
+          body: 'ستصلك تنبيهات فورية مع دولة الزائر عند دخول أي زائر جديد لموقع بتاح للاستثمار العقاري.',
           icon: '/assets/aistudio/logo_ptah__8c02f9bc.jpeg'
         });
         playNotificationSound();
@@ -158,7 +195,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleSendWhatsAppVisitorAlert = () => {
-    const text = `🚨 *تنبيه زوار موقع بتاح للاستثمار العقاري* 🚨\n\nيوجد زوار يتصفحون الموقع الآن.\nعدد الزيارات المسجلة: ${visitorLogs.length}\nرابط الموقع المباشر:\nhttps://www.ptahrealestate.com`;
+    const latest = visitorLogs[0];
+    const countrySummary = latest ? `\nآخر زائر: ${latest.flag || ''} ${latest.countryAr}${latest.city ? ` (${latest.city})` : ''}` : '';
+    const text = `🚨 *تنبيه زوار موقع بتاح للاستثمار العقاري* 🚨\n\nيوجد زوار يتصفحون الموقع الآن.\nعدد الزيارات المسجلة: ${visitorLogs.length}${countrySummary}\nرابط الموقع المباشر:\nhttps://www.ptahrealestate.com`;
     const cleanNumber = settingsForm.whatsappNumber.replace(/[^0-9]/g, '');
     window.open(`https://wa.me/${cleanNumber}?text=${encodeURIComponent(text)}`, '_blank');
   };
@@ -168,6 +207,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     saveStoredCompanySettings(settingsForm);
     setSettingsSuccessMsg(true);
     setTimeout(() => setSettingsSuccessMsg(false), 4000);
+  };
+
+  const handleSendTestEmail = async (emailTarget: string) => {
+    setTestEmailStatus({ state: 'sending' });
+    const res = await sendTestEmail(emailTarget);
+    if (res.ok) {
+      setTestEmailStatus({
+        state: 'sent',
+        msg: lang === 'ar'
+          ? `تم إرسال رسالة الاختبار إلى ${emailTarget}. افتح البريد واضغط "Activate Form" إذا كانت هذه المرة الأولى لتفعيل استقبال جميع الطلبات!`
+          : `Test email sent to ${emailTarget}. Check your inbox and click "Activate Form" if prompted!`
+      });
+    } else {
+      setTestEmailStatus({
+        state: 'error',
+        msg: lang === 'ar'
+          ? `تعذر الإرسال حالياً (${res.message || 'تحقق من الاتصال أو صحة البريد'}).`
+          : `Failed to send (${res.message || 'Check connection or email address'}).`
+      });
+    }
   };
 
   // Property Add/Edit Modal
@@ -181,7 +240,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     refCode: '',
     compound: '',
     developer: '',
-    location: 'new_cairo' as LocationKey,
+    location: 'tenth_of_ramadan' as LocationKey,
+    locationNameAr: LOCATION_PRESETS.tenth_of_ramadan.ar,
+    locationNameEn: LOCATION_PRESETS.tenth_of_ramadan.en,
     type: 'villa' as PropertyType,
     priceEGP: 25000000,
     priceUSD: 520000,
@@ -215,7 +276,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     p.title.en.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.refCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.compound.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.developer.toLowerCase().includes(searchTerm.toLowerCase())
+    p.developer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.locationName.ar.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    p.locationName.en.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleOpenAddModal = () => {
@@ -226,7 +289,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       refCode: `PT-${Math.floor(100 + Math.random() * 900)}`,
       compound: '',
       developer: '',
-      location: 'new_cairo',
+      location: 'tenth_of_ramadan',
+      locationNameAr: LOCATION_PRESETS.tenth_of_ramadan.ar,
+      locationNameEn: LOCATION_PRESETS.tenth_of_ramadan.en,
       type: 'villa',
       priceEGP: 30000000,
       priceUSD: 625000,
@@ -256,6 +321,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       compound: prop.compound,
       developer: prop.developer,
       location: prop.location,
+      locationNameAr: prop.locationName.ar,
+      locationNameEn: prop.locationName.en,
       type: prop.type,
       priceEGP: prop.priceEGP,
       priceUSD: prop.priceUSD,
@@ -296,18 +363,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const locationNameMap: Record<LocationKey, { ar: string; en: string }> = {
-      tenth_of_ramadan: { ar: 'العاشر من رمضان، محافظة الشرقية', en: '10th of Ramadan City, Sharqia' },
-      new_cairo: { ar: 'القاهرة الجديدة، التجمع الخامس', en: 'New Cairo, 5th Settlement' },
-      new_capital: { ar: 'العاصمة الإدارية الجديدة', en: 'New Administrative Capital' },
-      sheikh_zayed: { ar: 'الشيخ زايد، الجيزة', en: 'Sheikh Zayed, Giza' },
-      north_coast: { ar: 'الساحل الشمالي، البحر المتوسط', en: 'North Coast & Ras El Hekma' },
-      el_gouna: { ar: 'الجونة، البحر الأحمر', en: 'El Gouna, Red Sea' },
-      october_city: { ar: 'مدينة السادس من أكتوبر', en: '6th of October City' }
+    const presetNames = LOCATION_PRESETS[formData.location as string];
+    const resolvedLocationName = {
+      ar: formData.locationNameAr.trim() || presetNames?.ar || 'مصر',
+      en: formData.locationNameEn.trim() || formData.locationNameAr.trim() || presetNames?.en || 'Egypt'
     };
 
     if (editingPropertyId) {
-      // Update existing
       const updated = properties.map(p => {
         if (p.id === editingPropertyId) {
           return {
@@ -317,7 +379,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             compound: formData.compound,
             developer: formData.developer,
             location: formData.location,
-            locationName: locationNameMap[formData.location],
+            locationName: resolvedLocationName,
             type: formData.type,
             priceEGP: Number(formData.priceEGP),
             priceUSD: Number(formData.priceUSD),
@@ -341,7 +403,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
       onUpdateProperties(updated);
     } else {
-      // Add new
       const newProperty: Property = {
         id: `ptah-prop-${Date.now()}`,
         refCode: formData.refCode,
@@ -349,7 +410,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         compound: formData.compound,
         developer: formData.developer,
         location: formData.location,
-        locationName: locationNameMap[formData.location],
+        locationName: resolvedLocationName,
         type: formData.type,
         priceEGP: Number(formData.priceEGP),
         priceUSD: Number(formData.priceUSD),
@@ -785,16 +846,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold mb-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>{lang === 'ar' ? 'نظام التتبع والإشعار اللحظي نشط 24/7' : 'Live Real-time Visitor Radar Active'}</span>
+                <span>{lang === 'ar' ? 'نظام التتبع والإشعار اللحظي مع تحديد الدولة نشط 24/7' : 'Live GeoIP Visitor Radar Active'}</span>
               </div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Bell className="w-5 h-5 text-amber-400" />
-                <span>{lang === 'ar' ? 'سجل الزوار وتنبيهات الدخول الفورية' : 'Live Visitor Log & Instant Alerts'}</span>
+                <span>{lang === 'ar' ? 'سجل الزوار، الدول، وتنبيهات الدخول الفورية' : 'Live Visitor Log, Countries & Instant Alerts'}</span>
               </h3>
               <p className="text-xs text-neutral-400 mt-1">
                 {lang === 'ar' 
-                  ? 'يتم إشعارك فورياً بصوت ناعم وإشعار على الشاشة في كل مرة يدخل فيها عميل جديد إلى موقعك، مع إمكانية إرسال التنبيه على رقم الواتساب.'
-                  : 'Receive instant audible alerts and desktop push notifications whenever any customer visits your website.'}
+                  ? 'يتم تحديد دولة ومدينة كل زائر تلقائياً وإصدار تنبيه فوري بصوت ناعم وإشعار على المتصفح بمجرد دخول أي زائر للموقع.'
+                  : 'Automatically detects each visitor country & city and fires real-time audio + desktop alerts.'}
               </p>
             </div>
 
@@ -829,7 +890,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <button
                 onClick={handleSimulateVisitor}
                 className="px-3 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-amber-300 text-xs font-medium border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer"
-                title="محاكاة دخول زائر جديد لتجربة الصوت والتنبيه"
+                title="تجربة صوت التنبيه واكتشاف الدولة"
               >
                 <Radio className="w-3.5 h-3.5 text-amber-400" />
                 <span>{lang === 'ar' ? 'تجربة التنبيه والصوت' : 'Test Alert Sound'}</span>
@@ -846,6 +907,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
+          {/* Country Summary Strip */}
+          {visitorLogs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 bg-neutral-950/70 p-3.5 rounded-2xl border border-white/5">
+              <span className="text-[11px] font-bold text-neutral-400 me-1 flex items-center gap-1">
+                <Globe className="w-3.5 h-3.5 text-amber-400" />
+                <span>{lang === 'ar' ? 'دول الزوار:' : 'Countries:'}</span>
+              </span>
+              {Object.entries(
+                visitorLogs.reduce<Record<string, { label: string; count: number; flag: string }>>((acc, v) => {
+                  const key = v.countryCode || 'EG';
+                  if (!acc[key]) {
+                    acc[key] = { label: lang === 'ar' ? (v.countryAr || v.country || 'مصر') : (v.country || 'Egypt'), count: 0, flag: v.flag || '🌍' };
+                  }
+                  acc[key].count += 1;
+                  return acc;
+                }, {})
+              ).map(([code, stat]) => (
+                <span key={code} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-900 border border-white/10 text-xs text-neutral-200">
+                  <span>{stat.flag}</span>
+                  <span className="font-semibold">{stat.label}</span>
+                  <span className="text-amber-400 font-bold">({stat.count})</span>
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Banner for latest arrival */}
           {lastVisitorAlert && (
             <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-300 animate-in fade-in slide-in-from-top-2">
@@ -853,7 +940,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span className="w-3 h-3 rounded-full bg-amber-400 animate-ping shrink-0" />
                 <span>
                   <strong>{lang === 'ar' ? 'تنبيه زائر الآن:' : 'Live Visitor Alert:'}</strong>{' '}
-                  {lang === 'ar' ? `الزائر يتصفح صفحة «${lastVisitorAlert.page}» عبر جهاز (${lastVisitorAlert.device})` : `Visiting: ${lastVisitorAlert.page} on ${lastVisitorAlert.device}`}
+                  {lang === 'ar'
+                    ? `زائر من ${lastVisitorAlert.flag || '🌍'} ${lastVisitorAlert.countryAr || lastVisitorAlert.country}${lastVisitorAlert.city ? ` (${lastVisitorAlert.city})` : ''} يتصفح «${lastVisitorAlert.page}» عبر (${lastVisitorAlert.device})`
+                    : `Visitor from ${lastVisitorAlert.flag || '🌍'} ${lastVisitorAlert.country}${lastVisitorAlert.city ? ` (${lastVisitorAlert.city})` : ''} viewing ${lastVisitorAlert.page} on ${lastVisitorAlert.device}`}
                 </span>
               </div>
               <span className="font-mono text-[11px] text-amber-400/80">{lastVisitorAlert.timestamp}</span>
@@ -883,7 +972,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="text-center py-12 bg-neutral-950 rounded-2xl border border-white/5 space-y-2">
                 <Bell className="w-8 h-8 text-neutral-600 mx-auto" />
                 <p className="text-xs text-neutral-400 font-medium">
-                  {lang === 'ar' ? 'لا توجد زيارات مسجلة بعد. عند تصفح أي عميل للموقع ستظهر زيارته هنا فوراً مع صوت تنبيه.' : 'No visits recorded yet.'}
+                  {lang === 'ar' ? 'لا توجد زيارات مسجلة بعد. عند تصفح أي عميل للموقع ستظهر زيارته ودولته هنا فوراً مع صوت تنبيه.' : 'No visits recorded yet.'}
                 </p>
                 <button
                   onClick={handleSimulateVisitor}
@@ -899,6 +988,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <thead className="bg-neutral-900 text-neutral-400 text-[11px] uppercase border-b border-white/5">
                       <tr>
                         <th className="p-3 text-start">{lang === 'ar' ? 'الوقت والتاريخ' : 'Time'}</th>
+                        <th className="p-3 text-start">{lang === 'ar' ? 'الدولة والمدينة' : 'Country & City'}</th>
                         <th className="p-3 text-start">{lang === 'ar' ? 'الصفحة التي يتصفحها' : 'Page Visited'}</th>
                         <th className="p-3 text-center">{lang === 'ar' ? 'نوع الجهاز' : 'Device'}</th>
                         <th className="p-3 text-start">{lang === 'ar' ? 'المتصفح' : 'Browser'}</th>
@@ -910,6 +1000,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <tr key={log.id} className="hover:bg-neutral-900/50 transition-colors">
                           <td className="p-3 text-amber-400 whitespace-nowrap">
                             {log.timestamp}
+                          </td>
+                          <td className="p-3 font-sans whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-neutral-900 border border-white/10 text-white font-semibold">
+                              <span className="text-sm">{log.flag || '🌍'}</span>
+                              <span>{lang === 'ar' ? (log.countryAr || log.country || 'مصر') : (log.country || 'Egypt')}</span>
+                              {log.city && (
+                                <span className="text-[10px] text-neutral-400 font-normal">• {log.city}</span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-3 text-white font-sans font-semibold">
                             {log.page}
@@ -1025,10 +1124,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 />
               </div>
 
-              {/* Official Email */}
-              <div className="bg-neutral-950 p-4 rounded-2xl border border-white/10 space-y-2">
-                <label className="block text-neutral-300 font-bold">
-                  {lang === 'ar' ? 'البريد الإلكتروني الرسمي للاستفسارات' : 'Official Email Address'} *
+              {/* Official Email + Test Activation */}
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-amber-500/30 space-y-2.5">
+                <label className="block text-amber-400 font-bold flex items-center justify-between">
+                  <span>{lang === 'ar' ? 'البريد الإلكتروني الرسمي لاستقبال رسائل العملاء' : 'Official Email Address'} *</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSendTestEmail(settingsForm.email)}
+                    disabled={testEmailStatus.state === 'sending'}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Mail className="w-3 h-3" />
+                    <span>{testEmailStatus.state === 'sending' ? 'جاري الإرسال...' : (lang === 'ar' ? 'تفعيل واختبار الإيميل الآن' : 'Test & Activate')}</span>
+                  </button>
                 </label>
                 <input
                   type="email"
@@ -1038,6 +1146,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   placeholder="info@ptahrealestate.com"
                   className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-white font-mono"
                 />
+                <p className="text-[10px] text-neutral-400 leading-relaxed">
+                  هام: لتصل رسائل العملاء إلى <span className="text-amber-300 font-mono">info@ptahrealestate.com</span> اضغط على زر «تفعيل واختبار الإيميل» ثم افتح صندوق الوارد واضغط <strong>Activate Form</strong> (مرة واحدة فقط).
+                </p>
+                {testEmailStatus.state !== 'idle' && testEmailStatus.msg && (
+                  <div className={`p-2.5 rounded-xl text-[11px] font-medium border ${
+                    testEmailStatus.state === 'sent'
+                      ? 'bg-emerald-950/70 border-emerald-500/40 text-emerald-300'
+                      : 'bg-red-950/70 border-red-500/40 text-red-300'
+                  }`}>
+                    {testEmailStatus.msg}
+                  </div>
+                )}
+              </div>
+
+              {/* Backup Notification Email & Visitor Email Toggle */}
+              <div className="bg-neutral-950 p-4 rounded-2xl border border-white/10 space-y-2.5 md:col-span-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="block text-neutral-200 font-bold">
+                    {lang === 'ar' ? 'بريد إشعارات احتياطي / شخصي (اختياري - مثل Gmail أو Outlook)' : 'Backup Notification Email (Optional Gmail/Outlook)'}
+                  </label>
+                  {settingsForm.notificationEmail && (
+                    <button
+                      type="button"
+                      onClick={() => handleSendTestEmail(settingsForm.notificationEmail || '')}
+                      className="px-2.5 py-1 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-amber-300 text-[10px] font-bold flex items-center gap-1 cursor-pointer self-start"
+                    >
+                      <Mail className="w-3 h-3" />
+                      <span>{lang === 'ar' ? 'اختبار البريد الاحتياطي' : 'Test Backup Email'}</span>
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="email"
+                  value={settingsForm.notificationEmail || ''}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, notificationEmail: e.target.value })}
+                  placeholder="yourname@gmail.com"
+                  className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl px-3.5 py-2.5 text-white font-mono"
+                />
+                <label className="flex items-center gap-2 pt-1 text-neutral-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(settingsForm.notifyOnVisitorEmail)}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, notifyOnVisitorEmail: e.target.checked })}
+                    className="w-4 h-4 accent-amber-500 rounded"
+                  />
+                  <span>
+                    {lang === 'ar'
+                      ? 'إرسال إشعار بريد إلكتروني تلقائي عند دخول زائر جديد للموقع (يتضمن دولة الزائر والصفحة)'
+                      : 'Send automatic email notification when a new visitor enters the site (includes country)'}
+                  </span>
+                </label>
               </div>
 
               {/* Address Arabic */}
@@ -1233,6 +1392,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           </div>
 
+          {/* Domain Sync Notice */}
+          <div className="bg-amber-500/10 border border-amber-500/30 p-5 rounded-2xl space-y-2">
+            <h4 className="text-sm font-bold text-amber-300 flex items-center gap-2">
+              <RefreshCw className="w-4 h-4" />
+              <span>{lang === 'ar' ? 'متى تظهر التحديثات تلقائياً على الدومين الخاص بك؟' : 'How Domain Updates Sync'}</span>
+            </h4>
+            <p className="text-xs text-neutral-200 leading-relaxed">
+              {lang === 'ar'
+                ? '1) إذا قمت برفع الموقع عبر ملف الـ ZIP على استضافة cPanel أو Hostinger: فإن الدومين يعرض نسخة الملفات المرفوعة هناك فقط، ولذلك عند أي تعديل في البرمجة هنا يلزم تحميل أحدث ملف ZIP (من الزر الأخضر أعلاه) ورفعه وفك ضغطه مكان الملفات القديمة ليسمع التحديث. أما إضافة عقارات أو تعديل رقم الواتساب من لوحة التحكم فستعمل على نسختك.'
+                : 'If you deployed via static ZIP to cPanel, re-upload the fresh ZIP after code changes. Adding properties in the CMS works inside your deployed site.'}
+            </p>
+            <p className="text-xs text-emerald-300 leading-relaxed">
+              {lang === 'ar'
+                ? '2) إذا ربطت الدومين مباشرة بالنسخة السحابية المنشورة (عبر CNAME / Custom Domain): فتظهر كافة التحديثات على الدومين مباشرة بمجرد نشر التعديل.'
+                : 'If your domain points directly to the cloud deployment via CNAME, updates appear automatically once deployed.'}
+            </p>
+          </div>
+
           {/* DNS Settings Reference */}
           <div className="bg-neutral-950 p-5 rounded-2xl border border-white/10 space-y-3">
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
@@ -1361,23 +1538,90 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   />
                 </div>
 
-                <div>
-                  <label className="block text-neutral-300 font-medium mb-1">
-                    {t.form.location} *
-                  </label>
-                  <select
-                    value={formData.location}
-                    onChange={(e) => setFormData({ ...formData, location: e.target.value as any })}
-                    className="w-full bg-neutral-900 border border-white/10 rounded-xl p-2.5 text-white cursor-pointer"
-                  >
-                    <option value="tenth_of_ramadan">{tLocs.tenth_of_ramadan}</option>
-                    <option value="new_cairo">{tLocs.new_cairo}</option>
-                    <option value="new_capital">{tLocs.new_capital}</option>
-                    <option value="sheikh_zayed">{tLocs.sheikh_zayed}</option>
-                    <option value="north_coast">{tLocs.north_coast}</option>
-                    <option value="el_gouna">{tLocs.el_gouna}</option>
-                    <option value="october_city">{tLocs.october_city}</option>
-                  </select>
+                <div className="sm:col-span-2 bg-neutral-950/70 p-3.5 rounded-2xl border border-amber-500/25 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="text-amber-400 font-bold flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5" />
+                      <span>{t.form.location} * ({lang === 'ar' ? 'اختر منطقة جاهزة أو اكتب اسم المنطقة يدوياً' : 'Select preset or type custom region'})</span>
+                    </label>
+                    <select
+                      value={LOCATION_PRESETS[formData.location as string] ? formData.location : 'custom'}
+                      onChange={(e) => {
+                        const val = e.target.value as LocationKey;
+                        const preset = LOCATION_PRESETS[val as string];
+                        if (preset) {
+                          setFormData({
+                            ...formData,
+                            location: val,
+                            locationNameAr: preset.ar,
+                            locationNameEn: preset.en
+                          });
+                        } else {
+                          setFormData({
+                            ...formData,
+                            location: 'custom',
+                            locationNameAr: '',
+                            locationNameEn: ''
+                          });
+                        }
+                      }}
+                      className="bg-neutral-900 border border-white/15 rounded-xl px-3 py-1.5 text-white cursor-pointer text-xs"
+                    >
+                      <option value="tenth_of_ramadan">{tLocs.tenth_of_ramadan}</option>
+                      <option value="new_cairo">{tLocs.new_cairo}</option>
+                      <option value="new_capital">{tLocs.new_capital}</option>
+                      <option value="sheikh_zayed">{tLocs.sheikh_zayed}</option>
+                      <option value="north_coast">{tLocs.north_coast}</option>
+                      <option value="el_gouna">{tLocs.el_gouna}</option>
+                      <option value="october_city">{tLocs.october_city}</option>
+                      <option value="custom">{lang === 'ar' ? '✏️ كتابة منطقة مخصصة يدوياً' : '✏️ Custom Location'}</option>
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-neutral-300 font-medium mb-1">
+                        {lang === 'ar' ? 'اسم المنطقة بالعربية (قابل للكتابة والتعديل) *' : 'Region / District (Arabic) *'}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.locationNameAr}
+                        onChange={(e) => {
+                          const typed = e.target.value;
+                          const matchesPreset = LOCATION_PRESETS[formData.location as string]?.ar === typed;
+                          setFormData({
+                            ...formData,
+                            location: matchesPreset ? formData.location : 'custom',
+                            locationNameAr: typed
+                          });
+                        }}
+                        placeholder={lang === 'ar' ? 'اكتب المنطقة مثل: المجاورة 15 - العاشر من رمضان، أو مدينتي...' : 'Type Arabic location...'}
+                        className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl p-2.5 text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-neutral-300 font-medium mb-1">
+                        {lang === 'ar' ? 'اسم المنطقة بالإنجليزية (اختياري)' : 'Region / District (English)'}
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.locationNameEn}
+                        onChange={(e) => {
+                          const typed = e.target.value;
+                          const matchesPreset = LOCATION_PRESETS[formData.location as string]?.en === typed;
+                          setFormData({
+                            ...formData,
+                            location: matchesPreset ? formData.location : 'custom',
+                            locationNameEn: typed
+                          });
+                        }}
+                        placeholder="e.g., Madinaty, New Cairo..."
+                        className="w-full bg-neutral-900 border border-white/10 focus:border-amber-400 rounded-xl p-2.5 text-white"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div>

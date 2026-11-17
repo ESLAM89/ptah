@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { Language } from '../types';
 import { translations } from '../i18n/translations';
-import { SOCIAL_LINKS } from '../data/mockProperties';
+import { SOCIAL_LINKS, getStoredCompanySettings } from '../data/mockProperties';
 
 interface AboutSectionProps {
   lang: Language;
@@ -26,10 +26,11 @@ export const AboutSection: React.FC<AboutSectionProps> = ({ lang, onExplorePrope
   const tHero = translations[lang].hero;
 
   const openWhatsApp = () => {
+    const settings = getStoredCompanySettings();
     const text = lang === 'ar'
       ? 'مرحباً، أود معرفة المزيد عن خدمات بتاح للاستثمار العقاري وحجز موعد استشاري.'
       : 'Hello, I would like to learn more about Ptah Real Estate advisory services.';
-    window.open(`https://wa.me/${SOCIAL_LINKS.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
+    window.open(`https://wa.me/${settings.whatsappNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   return (
