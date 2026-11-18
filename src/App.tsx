@@ -394,7 +394,7 @@ export default function App() {
               />
 
               {/* Floating Headline Card Overlay right below hero */}
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 -mt-16 sm:-mt-24 relative z-20">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 -mt-12 sm:-mt-16 relative z-20">
                 <div className="bg-gradient-to-r from-neutral-950/95 via-[#0e101b]/95 to-neutral-950/95 border border-amber-500/30 rounded-3xl p-6 sm:p-10 shadow-2xl backdrop-blur-xl">
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                     <div className="space-y-3 max-w-2xl">

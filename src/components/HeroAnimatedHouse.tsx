@@ -62,7 +62,7 @@ export const HeroAnimatedHouse: React.FC<HeroAnimatedHouseProps> = ({
     {
       id: 4,
       x: '46%',
-      y: '82%',
+      y: '68%',
       titleAr: 'الممشى الحجري المنسق',
       titleEn: 'Flagstone Garden Walkway',
       descAr: 'ممر حجري طبيعي منسق محاط بنباتات وزهور عطرية متناغمة مع الطبيعة.',
@@ -169,20 +169,16 @@ export const HeroAnimatedHouse: React.FC<HeroAnimatedHouseProps> = ({
         </div>
       ))}
 
-      {/* Sleek Bottom Control Dock */}
+      {/* Sleek Bottom Control Dock (positioned cleanly above the floating hero card) */}
       <div 
-        className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 w-[94%] max-w-2xl transition-transform duration-300"
-        style={{
-          transform: isControlsCollapsed 
-            ? 'translateX(-50%) translateY(calc(100% - 30px))' 
-            : 'translateX(-50%) translateY(0)'
-        }}
+        className="absolute bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-30 w-[94%] max-w-2xl transition-all duration-300"
       >
         {/* Toggle Collapse Pill */}
-        <div className="flex justify-center -mb-px">
+        <div className={`flex justify-center ${isControlsCollapsed ? '' : '-mb-px'}`}>
           <button
             onClick={() => setIsControlsCollapsed(!isControlsCollapsed)}
-            className="px-4 py-1 rounded-t-lg bg-neutral-900/90 border-t border-x border-amber-500/30 text-amber-400 text-xs font-medium flex items-center gap-1.5 backdrop-blur-md hover:bg-neutral-800 transition-colors cursor-pointer"
+            className="px-4 py-1.5 rounded-t-xl bg-neutral-900/95 border border-amber-500/35 text-amber-400 text-xs font-medium flex items-center gap-1.5 backdrop-blur-md hover:bg-neutral-800 transition-colors cursor-pointer shadow-lg"
+            style={isControlsCollapsed ? { borderRadius: '0.75rem' } : undefined}
           >
             {isControlsCollapsed ? (
               <>
@@ -199,8 +195,9 @@ export const HeroAnimatedHouse: React.FC<HeroAnimatedHouseProps> = ({
         </div>
 
         {/* Control Dock Panel */}
-        <div className="glass-panel rounded-2xl p-3 shadow-2xl border border-amber-500/25 bg-neutral-950/90 backdrop-blur-xl">
-          <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+        {!isControlsCollapsed && (
+          <div className="glass-panel rounded-2xl p-3 shadow-2xl border border-amber-500/25 bg-neutral-950/90 backdrop-blur-xl">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
             
             {/* Lighting Mood Switcher */}
             <div className="flex items-center gap-1 bg-neutral-900/80 p-1 rounded-xl border border-white/5">
@@ -269,7 +266,8 @@ export const HeroAnimatedHouse: React.FC<HeroAnimatedHouseProps> = ({
             </a>
 
           </div>
-        </div>
+          </div>
+        )}
       </div>
 
     </div>
