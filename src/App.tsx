@@ -32,7 +32,8 @@ import {
   saveStoredVisitorLogs,
   getStoredVisitorLogs,
   playNotificationSound,
-  logNewVisitor
+  logNewVisitor,
+  NEW_HERO_HOUSE_IMAGE
 } from './data/mockProperties';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -117,7 +118,20 @@ export default function App() {
           localStorage.setItem('ptah_real_estate_properties_v4', JSON.stringify(data.properties));
         }
         if (data.settings && typeof data.settings === 'object') {
-          const mergedSettings = { ...getStoredCompanySettings(), ...data.settings };
+          const serverHero = data.settings.heroHouseImage;
+          const legacyHeroes = [
+            '/assets/aistudio/download_eb054fbc.jpg',
+            '/assets/aistudio/3d_rendering_of_modern_cozy_house_with_garage_for_sale_or_rent_with_beautiful_landscaping_on_background__real_estate_concept_artwork_29fcfac4.jpg',
+            '/assets/aistudio/download__1__66931253.jpg'
+          ];
+          const mergedSettings = {
+            ...getStoredCompanySettings(),
+            ...data.settings,
+            heroHouseImage:
+              !serverHero || legacyHeroes.includes(serverHero)
+                ? NEW_HERO_HOUSE_IMAGE
+                : serverHero
+          };
           setCompanySettings(mergedSettings);
           localStorage.setItem('ptah_company_settings', JSON.stringify(mergedSettings));
         }
@@ -390,6 +404,8 @@ export default function App() {
             <section className="relative w-full">
               <HeroAnimatedHouse
                 lang={lang}
+                heroImage={companySettings.heroHouseImage}
+                mapsUrl={companySettings.mapsUrl}
                 onExploreUnits={() => setActiveTab('properties')}
               />
 

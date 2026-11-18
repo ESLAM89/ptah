@@ -536,6 +536,13 @@ export function addLead(lead: Omit<LeadInquiry, 'id' | 'date' | 'status'>): Lead
   return newLead;
 }
 
+export const NEW_HERO_HOUSE_IMAGE = '/assets/aistudio/download__2__ed2da637.jpg';
+const LEGACY_HERO_IMAGES = new Set([
+  '/assets/aistudio/download_eb054fbc.jpg',
+  '/assets/aistudio/3d_rendering_of_modern_cozy_house_with_garage_for_sale_or_rent_with_beautiful_landscaping_on_background__real_estate_concept_artwork_29fcfac4.jpg',
+  '/assets/aistudio/download__1__66931253.jpg'
+]);
+
 export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   website: 'https://www.ptahrealestate.com',
   domain: 'www.ptahrealestate.com',
@@ -554,7 +561,7 @@ export const DEFAULT_COMPANY_SETTINGS: CompanySettings = {
   addressEn: '10th of Ramadan City, Sharqia Governorate, Egypt',
   mapsUrl: 'https://maps.app.goo.gl/1j4jE64STYMftjHa7?g_st=aw',
   logoUrl: '/assets/aistudio/logo_ptah__8c02f9bc.jpeg',
-  heroHouseImage: '/assets/aistudio/download_eb054fbc.jpg'
+  heroHouseImage: NEW_HERO_HOUSE_IMAGE
 };
 
 const STORAGE_KEY_SETTINGS = 'ptah_company_settings';
@@ -564,7 +571,12 @@ export function getStoredCompanySettings(): CompanySettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
     if (!raw) return DEFAULT_COMPANY_SETTINGS;
-    return { ...DEFAULT_COMPANY_SETTINGS, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw) as Partial<CompanySettings>;
+    const heroHouseImage =
+      !parsed.heroHouseImage || LEGACY_HERO_IMAGES.has(parsed.heroHouseImage)
+        ? NEW_HERO_HOUSE_IMAGE
+        : parsed.heroHouseImage;
+    return { ...DEFAULT_COMPANY_SETTINGS, ...parsed, heroHouseImage };
   } catch {
     return DEFAULT_COMPANY_SETTINGS;
   }
